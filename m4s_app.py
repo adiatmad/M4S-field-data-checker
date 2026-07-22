@@ -8,10 +8,10 @@ Provides point-and-click way to run QA/QC and systematically review flagged issu
 import io
 import pandas as pd
 import streamlit as st
-import plotly.express as px
 from datetime import datetime
 import tempfile
 import pathlib
+import uuid
 
 from m4s_seagrass_qa import (
     load_data, standardize, validate, correct, generate_qa_report,
@@ -87,7 +87,7 @@ else:
         
         st.dataframe(
             issue_pivot,
-            use_container_width=True,
+            width='stretch',
             column_config={
                 "category": "Issue Category",
                 "error": st.column_config.NumberColumn("Errors", help="Must be fixed"),
@@ -220,7 +220,7 @@ if data_typos:
 if all_typos:
     st.error(f"⚠️ Found {len(all_typos)} potential species typos!")
     typos_df = pd.DataFrame(all_typos)
-    st.dataframe(typos_df, use_container_width=True)
+    st.dataframe(typos_df, width='stretch')
     
     st.markdown("""
     **How to Fix:**
@@ -292,7 +292,9 @@ if len(filtered_issues) > 0:
     
     # Display issues
     for idx, row in filtered_issues.iterrows():
-        key = f"{row['row_index']}_{row['category']}_{row['field']}"
+        # Create a truly unique key using a UUID suffix
+        unique_suffix = str(uuid.uuid4())[:8]
+        key = f"{row['row_index']}_{row['category']}_{row['field']}_{unique_suffix}"
         
         with st.expander(f"Row {row['row_index']} | {row['category']} | {row['severity'].upper()} | {row['field']}"):
             col1, col2 = st.columns([3, 1])
@@ -308,42 +310,45 @@ if len(filtered_issues) > 0:
                     if row['category'] == 'gps':
                         context_cols.extend(['_Local GPS_latitude', '_Local GPS_longitude', '_Local GPS_precision'])
                     context_df = df.iloc[context_start:context_end][context_cols]
-                    st.dataframe(context_df, use_container_width=True)
+                    st.dataframe(context_df, width='stretch')
             
             with col2:
-                # Review status
-                if key not in st.session_state.review_status:
-                    st.session_state.review_status[key] = "Unreviewed"
+                # Review status - using the UUID suffix to ensure uniqueness
+                status_key = f"status_{key}"
+                if status_key not in st.session_state:
+                    st.session_state[status_key] = "Unreviewed"
                 
                 status = st.selectbox(
                     "Status",
                     options=["Unreviewed", "Checked OK", "Needs Correction", "Needs Field Team Review"],
                     index=["Unreviewed", "Checked OK", "Needs Correction", "Needs Field Team Review"].index(
-                        st.session_state.review_status.get(key, "Unreviewed")
+                        st.session_state.get(status_key, "Unreviewed")
                     ),
-                    key=f"status_{key}"
+                    key=f"select_{key}"
                 )
-                st.session_state.review_status[key] = status
+                st.session_state[status_key] = status
                 
                 # Notes
                 note_key = f"note_{key}"
-                if note_key not in st.session_state.issue_notes:
-                    st.session_state.issue_notes[note_key] = ""
+                if note_key not in st.session_state:
+                    st.session_state[note_key] = ""
                 
                 note = st.text_area(
                     "Notes",
-                    value=st.session_state.issue_notes.get(note_key, ""),
+                    value=st.session_state.get(note_key, ""),
                     key=f"note_input_{key}",
                     placeholder="e.g., 'Confirmed typo - need to correct in raw data'",
                     height=68
                 )
-                st.session_state.issue_notes[note_key] = note
+                st.session_state[note_key] = note
 
     # Review summary
     st.markdown("### 📊 Review Progress Summary")
-    status_counts = pd.DataFrame.from_dict(
-        st.session_state.review_status, orient='index', columns=['status']
-    )['status'].value_counts()
+    status_counts = {}
+    for key, value in st.session_state.items():
+        if key.startswith("status_"):
+            status = value
+            status_counts[status] = status_counts.get(status, 0) + 1
     
     cols = st.columns(4)
     cols[0].metric("✅ Checked OK", status_counts.get("Checked OK", 0))
@@ -400,10 +405,18 @@ if st.button("📊 Generate Spot-Check Summary Report", use_container_width=True
     report_lines.append("|-----|----------|----------|-------|---------|--------|-------|")
     
     for _, row in issues.iterrows():
-        key = f"{row['row_index']}_{row['category']}_{row['field']}"
-        status = st.session_state.review_status.get(key, "Unreviewed")
-        note_key = f"note_{key}"
-        note = st.session_state.issue_notes.get(note_key, "")[:50]
+        # Find the status for this issue
+        status = "Unreviewed"
+        note = ""
+        for key, value in st.session_state.items():
+            if key.startswith("status_") and str(row['row_index']) in key and row['category'] in key:
+                status = value
+                break
+        for key, value in st.session_state.items():
+            if key.startswith("note_") and str(row['row_index']) in key and row['category'] in key:
+                note = value[:50]
+                break
+        
         report_lines.append(
             f"| {row['row_index']} | {row['category']} | {row['severity']} | "
             f"{row['field']} | {row['message'][:50]}... | {status} | {note} |"
@@ -438,7 +451,7 @@ with tab_report:
     st.download_button("📥 Download qa_report.md", report_text, file_name="qa_report.md")
 
 with tab_issues:
-    st.dataframe(issues, use_container_width=True)
+    st.dataframe(issues, width='stretch')
     st.download_button(
         "📥 Download qa_issues.csv",
         issues.to_csv(index=False),
@@ -446,7 +459,7 @@ with tab_issues:
     )
 
 with tab_corrections:
-    st.dataframe(correction_log, use_container_width=True)
+    st.dataframe(correction_log, width='stretch')
     st.download_button(
         "📥 Download correction_log.csv",
         correction_log.to_csv(index=False),
@@ -454,7 +467,7 @@ with tab_corrections:
     )
 
 with tab_clean:
-    st.dataframe(clean_df, use_container_width=True)
+    st.dataframe(clean_df, width='stretch')
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
