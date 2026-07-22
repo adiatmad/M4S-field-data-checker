@@ -15,10 +15,6 @@ import plotly.express as px
 from datetime import datetime
 from rapidfuzz import fuzz
 
-# We need to import these but will handle language mapping first
-import sys
-sys.path.append('.')  # Ensure current directory is in path
-
 # Import the core QA functions
 from m4s_seagrass_qa import (
     load_data as original_load_data,
@@ -35,10 +31,11 @@ st.caption("Upload the raw Kobo export (.xlsx). Nothing is saved to a server —
            "everything happens in this session and outputs are yours to download.")
 
 # ============================================================================
-# LANGUAGE MAPPING
+# LANGUAGE MAPPING - UPDATED WITH ACTUAL COLUMN NAMES
 # ============================================================================
 
 # Column name mappings for different languages
+# Based on actual column names from the exports
 COLUMN_MAPPINGS = {
     'English': {
         'start': 'start',
@@ -63,94 +60,42 @@ COLUMN_MAPPINGS = {
     'Tetum': {
         'start': 'start',
         'end': 'end',
-        'collector': 'Naran Koletor',
-        'phone': 'Nomor Telemovel',
-        'date': 'Data no Horas',
-        'admin_post': 'Postu Administrativu',
-        'village': 'Suku',
-        'site_code': 'Lokal/Site Kode',
-        'gps_lat': '_GPS Lokal_latitude',
-        'gps_lon': '_GPS Lokal_longitude',
-        'gps_alt': '_GPS Lokal_altitude',
-        'gps_precision': '_GPS Lokal_precision',
-        'transect': 'Numeru Tranjektu',
-        'quadrat': 'Numeru Quadrante',
-        'photo': 'Foto Quadrante',
-        'photo_url': 'Foto Quadrante_URL',
-        'uuid': '_uuid',
-        'submission_time': '_submission_time',
+        'collector': 'Naran Koletor',  # From Tetum data
+        'phone': 'Nomor Telemovel',    # From Tetum data
+        'date': 'Data no Horas',       # From Tetum data
+        'admin_post': 'Postu Administrativu',  # From Tetum data
+        'village': 'Suku',             # From Tetum data
+        'site_code': 'Lokal/Site Kode',  # From Tetum data
+        'gps_lat': '_GPS Lokal_latitude',  # From Tetum data
+        'gps_lon': '_GPS Lokal_longitude',  # From Tetum data
+        'gps_alt': '_GPS Lokal_altitude',  # From Tetum data
+        'gps_precision': '_GPS Lokal_precision',  # From Tetum data
+        'transect': 'Numeru Tranjektu',  # From Tetum data
+        'quadrat': 'Numeru Quadrante',   # From Tetum data
+        'photo': 'Foto Quadrante',       # From Tetum data
+        'photo_url': 'Foto Quadrante_URL',  # From Tetum data
+        'uuid': '_uuid',                 # Same in all versions
+        'submission_time': '_submission_time',  # Same in all versions
     },
     'Indonesian': {
         'start': 'start',
         'end': 'end',
-        'collector': 'Nama Kolektor',
-        'phone': 'Nomor Telepon',
-        'date': 'Tabgal dan Waktu',
-        'admin_post': 'Pos Administratif',
-        'village': 'Desa',
-        'site_code': 'Kode Lokal/Situs',
-        'gps_lat': '_GPS lokal_latitude',
-        'gps_lon': '_GPS lokal_longitude',
-        'gps_alt': '_GPS lokal_altitude',
-        'gps_precision': '_GPS lokal_precision',
-        'transect': 'Nomor Tranjekt',
-        'quadrat': 'Nomor Quadrant',
-        'photo': 'Foto Quadrant',
-        'photo_url': 'Foto Quadrant_URL',
-        'uuid': '_uuid',
-        'submission_time': '_submission_time',
-    }
-}
-
-# Species name mappings for different languages
-SPECIES_MAPPINGS = {
-    'English': {
-        'Halophila ovalis': 'Halophila ovalis',
-        'Halophila minor': 'Halophila minor',
-        'Halodule pinifolia': 'Halodule pinifolia',
-        'Halodule uninervis': 'Halodule uninervis',
-        'Halophila decipiens': 'Halophila decipiens',
-        'Halophila beccarii': 'Halophila beccarii',
-        'Halophila spinulosa': 'Halophila spinulosa',
-        'Enhalus acoroides': 'Enhalus acoroides',
-        'Thalassia hemprichii': 'Thalassia hemprichii',
-        'Cymodocea rotundata': 'Cymodocea rotundata',
-        'Cymodocea serrulata': 'Cymodocea serrulata',
-        'Syringodium isoetifolium': 'Syringodium isoetifolium',
-        'Ruppia maritima': 'Ruppia maritima',
-        'Thalassodendron ciliatum': 'Thalassodendron ciliatum',
-    },
-    'Tetum': {
-        'Halophila ovalis': 'Halophila ovalis',
-        'Halophila minor': 'Halophila minor', 
-        'Halodule pinifolia': 'Halodule pinifolia',
-        'Halodule uninervis': 'Halodule uninervis',
-        'Halophila decipiens': 'Halophila decipiens',
-        'Halophila beccarii': 'Halophila beccarii',
-        'Halophila spinulosa': 'Halophila spinulosa',
-        'Enhalus acoroides': 'Enhalus acoroides',
-        'Thalassia hemprichii': 'Thalassia hemprichii',
-        'Cymodocea rotundata': 'Cymodocea rotundata',
-        'Cymodocea serrulata': 'Cymodocea serrulata',
-        'Syringodium isoetifolium': 'Syringodium isoetifolium',
-        'Ruppia maritima': 'Ruppia maritima',
-        'Thalassodendron ciliatum': 'Thalassodendron ciliatum',
-    },
-    'Indonesian': {
-        'Halophila ovalis': 'Halophila ovalis',
-        'Halophila minor': 'Halophila minor',
-        'Halodule pinifolia': 'Halodule pinifolia',
-        'Halodule uninervis': 'Halodule uninervis',
-        'Halophila decipiens': 'Halophila decipiens',
-        'Halophila beccarii': 'Halophila beccarii',
-        'Halophila spinulosa': 'Halophila spinulosa',
-        'Enhalus acoroides': 'Enhalus acoroides',
-        'Thalassia hemprichii': 'Thalassia hemprichii',
-        'Cymodocea rotundata': 'Cymodocea rotundata',
-        'Cymodocea serrulata': 'Cymodocea serrulata',
-        'Syringodium isoetifolium': 'Syringodium isoetifolium',
-        'Ruppia maritima': 'Ruppia maritima',
-        'Thalassodendron ciliatum': 'Thalassodendron ciliatum',
+        'collector': 'Nama Kolektor',    # From Indonesian data
+        'phone': 'Nomor Telepon',        # From Indonesian data
+        'date': 'Tabgal dan Waktu',      # From Indonesian data (note: typo in original)
+        'admin_post': 'Pos Administratif',  # From Indonesian data
+        'village': 'Desa',               # From Indonesian data
+        'site_code': 'Kode Lokal/Situs',  # From Indonesian data
+        'gps_lat': '_GPS lokal_latitude',  # From Indonesian data
+        'gps_lon': '_GPS lokal_longitude',  # From Indonesian data
+        'gps_alt': '_GPS lokal_altitude',  # From Indonesian data
+        'gps_precision': '_GPS lokal_precision',  # From Indonesian data
+        'transect': 'Nomor Tranjekt',    # From Indonesian data
+        'quadrat': 'Nomor Quadrant',     # From Indonesian data
+        'photo': 'Foto Quadrant',        # From Indonesian data
+        'photo_url': 'Foto Quadrant_URL',  # From Indonesian data
+        'uuid': '_uuid',                 # Same in all versions
+        'submission_time': '_submission_time',  # Same in all versions
     }
 }
 
@@ -160,22 +105,70 @@ SPECIES_MAPPINGS = {
 
 def detect_language(df):
     """Detect the language of the dataset based on column names."""
-    # Check each language's required columns
+    # Check each language's required columns with more flexibility
     for lang, mapping in COLUMN_MAPPINGS.items():
-        required_cols = [
-            mapping['collector'],
-            mapping['date'],
-            mapping['admin_post'],
-            mapping['village'],
-            mapping['gps_lat'],
-            mapping['gps_lon'],
-            mapping['gps_precision'],
+        # Get the English column names we expect
+        required_eng_cols = [
+            'collector', 'date', 'admin_post', 'village', 
+            'gps_lat', 'gps_lon', 'gps_precision', 'uuid'
         ]
-        # Check if most required columns exist
-        found = sum(1 for col in required_cols if col in df.columns)
-        if found >= 5:  # At least 5 of 7 required columns match
+        
+        # Get the actual column names for this language
+        lang_cols = [mapping[col] for col in required_eng_cols]
+        
+        # Check how many match
+        found = sum(1 for col in lang_cols if col in df.columns)
+        
+        # Also check for partial matches (sometimes there are slight variations)
+        if found < 5:
+            # Try case-insensitive matching
+            df_cols_lower = [c.lower() for c in df.columns]
+            lang_cols_lower = [c.lower() for c in lang_cols]
+            found = sum(1 for col in lang_cols_lower if col in df_cols_lower)
+        
+        # If we found at least 5 of 7, it's likely this language
+        if found >= 5:
             return lang
-    return None
+    
+    # If no language detected, try to infer from content
+    sample_text = ' '.join(df.iloc[:3].astype(str).values.flatten())
+    
+    tetum_words = ['Numeru', 'Tranjektu', 'Quadrante', 'Suku', 'Postu', 'Koletor']
+    if any(word in sample_text for word in tetum_words):
+        return 'Tetum'
+    
+    indo_words = ['Nomor', 'Tranjekt', 'Quadrant', 'Desa', 'Pos', 'Kolektor']
+    if any(word in sample_text for word in indo_words):
+        return 'Indonesian'
+    
+    # Default to English
+    return 'English'
+
+def find_column_alternatives(df, target_col):
+    """Find alternative column names that might match."""
+    # Common variations
+    variations = {
+        'Collector Name': ['Collector Name', 'Naran Koletor', 'Nama Kolektor', 'Koletor', 'Kolektor'],
+        'Date and time': ['Date and time', 'Data no Horas', 'Tabgal dan Waktu', 'Data', 'Date'],
+        'Administration Post': ['Administration Post', 'Postu Administrativu', 'Pos Administratif', 'Postu', 'Pos'],
+        'Village': ['Village', 'Suku', 'Desa'],
+        '_Local GPS_latitude': ['_Local GPS_latitude', '_GPS Lokal_latitude', '_GPS lokal_latitude', '_GPS_latitude'],
+        '_Local GPS_longitude': ['_Local GPS_longitude', '_GPS Lokal_longitude', '_GPS lokal_longitude', '_GPS_longitude'],
+        '_Local GPS_precision': ['_Local GPS_precision', '_GPS Lokal_precision', '_GPS lokal_precision', '_GPS_precision'],
+        '_uuid': ['_uuid', 'UUID', 'uuid'],
+    }
+    
+    if target_col in variations:
+        for alt in variations[target_col]:
+            if alt in df.columns:
+                return alt
+    
+    # Try case-insensitive search
+    for col in df.columns:
+        if col.lower() == target_col.lower():
+            return col
+    
+    return target_col
 
 def map_columns(df, lang):
     """Rename columns to English equivalents for processing."""
@@ -183,17 +176,33 @@ def map_columns(df, lang):
         return df
     
     mapping = COLUMN_MAPPINGS[lang]
-    # Create reverse mapping: English -> Language-specific
-    reverse_mapping = {v: k for k, v in mapping.items()}
     
-    # Rename columns that exist
+    # Create rename dictionary
     rename_dict = {}
     for eng_col, lang_col in mapping.items():
-        if lang_col in df.columns and eng_col != lang_col:
+        # Skip if they're the same
+        if eng_col == lang_col:
+            continue
+        
+        # Check if the language column exists
+        if lang_col in df.columns:
             rename_dict[lang_col] = eng_col
+        else:
+            # Try to find alternative
+            alt_col = find_column_alternatives(df, lang_col)
+            if alt_col in df.columns and alt_col != eng_col:
+                rename_dict[alt_col] = eng_col
     
+    # Apply renaming
     if rename_dict:
         df = df.rename(columns=rename_dict)
+    
+    # Also ensure we have the _uuid column
+    if '_uuid' not in df.columns:
+        # Try to find it
+        uuid_col = find_column_alternatives(df, '_uuid')
+        if uuid_col in df.columns and uuid_col != '_uuid':
+            df = df.rename(columns={uuid_col: '_uuid'})
     
     return df
 
@@ -205,22 +214,24 @@ def load_data_with_language(file):
     """Load data with automatic language detection and column mapping."""
     raw = pd.read_excel(file)
     
+    # Show first few columns for debugging
+    st.write("**First 5 columns in the file:**")
+    st.write(list(raw.columns[:10]))
+    
     # Detect language
     lang = detect_language(raw)
-    if lang is None:
-        # Try to detect from content (e.g., presence of Tetum words)
-        # Check first few rows for Tetum-specific words
-        sample_text = ' '.join(raw.iloc[:3].astype(str).values.flatten())
-        tetum_words = ['Numeru', 'Tranjektu', 'Quadrante', 'Suku', 'Postu']
-        if any(word in sample_text for word in tetum_words):
+    
+    # If still English but we see Tetum columns, force Tetum
+    if lang == 'English':
+        # Check for Tetum column names
+        tetum_cols = ['Naran Koletor', 'Data no Horas', 'Postu Administrativu', 'Suku']
+        if any(col in raw.columns for col in tetum_cols):
             lang = 'Tetum'
-        else:
-            # Check for Indonesian
-            indo_words = ['Nomor', 'Tranjekt', 'Quadrant', 'Desa', 'Pos']
-            if any(word in sample_text for word in indo_words):
-                lang = 'Indonesian'
-            else:
-                lang = 'English'  # Default
+        
+        # Check for Indonesian column names
+        indo_cols = ['Nama Kolektor', 'Tabgal dan Waktu', 'Pos Administratif', 'Desa']
+        if any(col in raw.columns for col in indo_cols):
+            lang = 'Indonesian'
     
     st.info(f"🌐 Detected language: {lang}")
     
@@ -233,12 +244,25 @@ def load_data_with_language(file):
         "Village", "_Local GPS_latitude", "_Local GPS_longitude", 
         "_Local GPS_precision", "_uuid"
     ]
+    
+    # Check which columns are missing
     missing = [c for c in required if c not in df.columns]
+    
     if missing:
-        st.error(f"Missing expected columns even after mapping: {missing}")
-        # Show available columns for debugging
-        st.write("Available columns:", list(df.columns))
-        st.stop()
+        # Try to map missing columns manually
+        for col in missing:
+            alt = find_column_alternatives(df, col)
+            if alt in df.columns and alt != col:
+                df = df.rename(columns={alt: col})
+        
+        # Check again
+        missing = [c for c in required if c not in df.columns]
+        
+        if missing:
+            st.error(f"❌ Missing required columns: {missing}")
+            st.write("**Available columns in the file:**")
+            st.write(list(df.columns))
+            st.stop()
     
     return raw, df, lang
 
@@ -248,32 +272,35 @@ def load_data_with_language(file):
 
 def find_species_typos(df, lang='English'):
     """Find potential species typos using fuzzy matching."""
-    # Get species columns
+    # Get species columns - handle different languages
+    species_keywords = ['Seagrass species', 'du\'ut tasi', 'rumput laut', 'spesies', 'lamun']
     species_cols = []
+    
     for col in df.columns:
-        if 'Seagrass species' in col or 'du\'ut tasi' in col or 'rumput laut' in col:
-            if '/Halophila' in col or '/Halodule' in col or '/Enhalus' in col or \
-               '/Thalassia' in col or '/Cymodocea' in col or '/Syringodium' in col or \
-               '/Ruppia' in col or '/Thalassodendron' in col:
-                species_cols.append(col)
+        # Check if it's a species column
+        is_species_col = False
+        for keyword in species_keywords:
+            if keyword in col:
+                is_species_col = True
+                break
+        
+        if is_species_col:
+            # Check if it contains a species name
+            for sp in SPECIES_LIST:
+                if sp in col or sp.replace(' ', '') in col.replace(' ', ''):
+                    species_cols.append(col)
+                    break
     
     # Also check percent columns for species names
     pct_cols = []
     for col in df.columns:
         if any(sp in col for sp in ['Halophila', 'Halodule', 'Enhalus', 'Thalassia', 
                                      'Cymodocea', 'Syringodium', 'Ruppia', 'Thalassodendron']):
-            if ' (%)' in col:
+            if ' (%)' in col or 'Persentajen' in col or 'Percent' in col:
                 pct_cols.append(col)
     
     # Combine all species-related columns
-    all_species_cols = species_cols + pct_cols
-    
-    # Extract species names from column names
-    species_from_cols = set()
-    for col in all_species_cols:
-        for sp in SPECIES_LIST:
-            if sp in col:
-                species_from_cols.add(sp)
+    all_species_cols = list(set(species_cols + pct_cols))
     
     # Find values that might be typos
     typos = []
@@ -308,7 +335,6 @@ def find_species_typos(df, lang='English'):
                 for sp in SPECIES_LIST:
                     if sp.lower() in val.lower() or val.lower() in sp.lower():
                         if val.lower() != sp.lower():
-                            # Could be a partial match or typo
                             score = fuzz.token_sort_ratio(val.lower(), sp.lower())
                             if 70 < score < 100:
                                 typos.append({
@@ -382,17 +408,12 @@ if uploaded is None:
 try:
     raw_df, df, lang = load_data_with_language(uploaded)
     st.session_state.lang = lang
-except ValueError as e:
-    st.error(str(e))
+    st.success(f"✅ Successfully loaded {lang} version with {len(df)} records")
+except Exception as e:
+    st.error(f"Error loading data: {str(e)}")
     st.stop()
 
-# Display language info
-st.info(f"📋 Working with **{lang}** version of the survey")
-
-# ---- Run the pipeline with language-aware processing ----
-# We need to use the original processing functions but they work with English column names now
-# because we've mapped them
-
+# ---- Run the pipeline ----
 df = original_standardize(df)
 issues = original_validate(df)
 clean_df, correction_log = original_correct(df)
