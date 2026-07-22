@@ -27,94 +27,167 @@ st.title("M4S Seagrass QA — Metinaro")
 st.caption("Upload the raw Kobo export (.xlsx). Works with English, Tetum, and Indonesian versions.")
 
 # ============================================================================
-# LANGUAGE MAPPING - BASED ON ACTUAL FILE ANALYSIS
+# LANGUAGE MAPPING - COMPLETE AND ACCURATE
 # ============================================================================
 
-COLUMN_MAPPINGS = {
+# Complete column mappings for all languages
+# These are based on the ACTUAL column names from your exported files
+
+# First, define the English column names we want to map to
+ENGLISH_COLUMNS = {
+    'collector': 'Collector Name',
+    'phone': 'Phone number',
+    'date': 'Date and time',
+    'admin_post': 'Administration Post',
+    'village': 'Village',
+    'site_code': 'Local/Site Code',
+    'gps_lat': '_Local GPS_latitude',
+    'gps_lon': '_Local GPS_longitude',
+    'gps_alt': '_Local GPS_altitude',
+    'gps_precision': '_Local GPS_precision',
+    'transect': 'Transect Number',
+    'quadrat': 'Quadrat Number',
+    'photo': 'Quadrat Photo',
+    'photo_url': 'Quadrat Photo_URL',
+    'uuid': '_uuid',
+    'submission_time': '_submission_time',
+    'start': 'start',
+    'end': 'end',
+}
+
+# Now define the mapping for each language
+# IMPORTANT: These must match EXACTLY what's in the Excel file
+LANGUAGE_MAPPINGS = {
     'English': {
+        # English uses the same column names as ENGLISH_COLUMNS
+        # So we just use the English column names directly
         'collector': 'Collector Name',
+        'phone': 'Phone number',
         'date': 'Date and time',
         'admin_post': 'Administration Post',
         'village': 'Village',
+        'site_code': 'Local/Site Code',
         'gps_lat': '_Local GPS_latitude',
         'gps_lon': '_Local GPS_longitude',
         'gps_alt': '_Local GPS_altitude',
         'gps_precision': '_Local GPS_precision',
         'transect': 'Transect Number',
         'quadrat': 'Quadrat Number',
+        'photo': 'Quadrat Photo',
+        'photo_url': 'Quadrat Photo_URL',
         'uuid': '_uuid',
+        'submission_time': '_submission_time',
+        'start': 'start',
+        'end': 'end',
     },
     'Tetum': {
         'collector': 'Naran Koletor',
+        'phone': 'Nomor Telemovel',
         'date': 'Data no Horas',
-        'admin_post': 'Postu Administrativu',
+        'admin_post': 'Postu Administrativu',  # NOTE: ends with 'u', not 'f'
         'village': 'Suku',
+        'site_code': 'Lokal/Site Kode',
         'gps_lat': '_GPS Lokal_latitude',
         'gps_lon': '_GPS Lokal_longitude',
         'gps_alt': '_GPS Lokal_altitude',
         'gps_precision': '_GPS Lokal_precision',
         'transect': 'Numeru Tranjektu',
         'quadrat': 'Numeru Quadrante',
+        'photo': 'Foto Quadrante',
+        'photo_url': 'Foto Quadrante_URL',
         'uuid': '_uuid',
+        'submission_time': '_submission_time',
+        'start': 'start',
+        'end': 'end',
     },
     'Indonesian': {
         'collector': 'Nama Kolektor',
+        'phone': 'Nomor Telepon',
         'date': 'Tabgal dan Waktu',
         'admin_post': 'Pos Administratif',
         'village': 'Desa',
+        'site_code': 'Kode Lokal/Situs',
         'gps_lat': '_GPS lokal_latitude',
         'gps_lon': '_GPS lokal_longitude',
         'gps_alt': '_GPS lokal_altitude',
         'gps_precision': '_GPS lokal_precision',
         'transect': 'Nomor Tranjekt',
         'quadrat': 'Nomor Quadrant',
+        'photo': 'Foto Quadrant',
+        'photo_url': 'Foto Quadrant_URL',
         'uuid': '_uuid',
+        'submission_time': '_submission_time',
+        'start': 'start',
+        'end': 'end',
     }
 }
 
 # ============================================================================
-# LANGUAGE DETECTION AND MAPPING
+# LANGUAGE DETECTION
 # ============================================================================
 
 def detect_language(df):
-    """Detect the language of the dataset based on column names."""
-    # Check each language's required columns
-    for lang, mapping in COLUMN_MAPPINGS.items():
-        # Key columns that must exist
-        key_cols = ['collector', 'date', 'admin_post', 'village', 'gps_lat']
-        lang_cols = [mapping[col] for col in key_cols]
-        
-        # Count how many match
-        found = sum(1 for col in lang_cols if col in df.columns)
-        
-        # If we found at least 4 of 5, it's this language
-        if found >= 4:
-            return lang
+    """
+    Detect which language version this is by checking column names.
+    Returns: 'English', 'Tetum', or 'Indonesian'
+    """
+    # Check for Tetum columns (using the actual column names)
+    tetum_indicators = ['Naran Koletor', 'Data no Horas', 'Postu Administrativu', 'Suku']
+    tetum_score = sum(1 for col in tetum_indicators if col in df.columns)
     
-    # If no exact match, try case-insensitive
-    df_cols_lower = [c.lower() for c in df.columns]
-    for lang, mapping in COLUMN_MAPPINGS.items():
-        key_cols = ['collector', 'date', 'admin_post', 'village', 'gps_lat']
-        lang_cols = [mapping[col].lower() for col in key_cols]
-        found = sum(1 for col in lang_cols if col in df_cols_lower)
-        if found >= 4:
-            return lang
+    # Check for Indonesian columns
+    indo_indicators = ['Nama Kolektor', 'Tabgal dan Waktu', 'Pos Administratif', 'Desa']
+    indo_score = sum(1 for col in indo_indicators if col in df.columns)
     
-    return 'English'  # Default
+    # Check for English columns
+    eng_indicators = ['Collector Name', 'Date and time', 'Administration Post', 'Village']
+    eng_score = sum(1 for col in eng_indicators if col in df.columns)
+    
+    # Return the language with the highest score
+    scores = {
+        'English': eng_score,
+        'Tetum': tetum_score,
+        'Indonesian': indo_score
+    }
+    
+    # If we found at least 2 indicators, return the best match
+    best_lang = max(scores, key=scores.get)
+    if scores[best_lang] >= 2:
+        return best_lang
+    
+    # If no clear match, check for specific columns
+    if '_GPS Lokal_latitude' in df.columns:
+        return 'Tetum'
+    if '_GPS lokal_latitude' in df.columns:
+        return 'Indonesian'
+    
+    # Default to English
+    return 'English'
 
-def map_columns(df, lang):
-    """Rename columns to English equivalents for processing."""
-    if lang not in COLUMN_MAPPINGS:
+# ============================================================================
+# COLUMN MAPPING
+# ============================================================================
+
+def map_columns_to_english(df, lang):
+    """
+    Rename columns from the detected language to English equivalents.
+    """
+    if lang not in LANGUAGE_MAPPINGS:
         return df
     
-    mapping = COLUMN_MAPPINGS[lang]
+    mapping = LANGUAGE_MAPPINGS[lang]
     rename_dict = {}
     
-    for eng_col, lang_col in mapping.items():
+    # For each English column, find its language-specific counterpart
+    for eng_key, lang_col in mapping.items():
+        # Get the English column name
+        eng_col = ENGLISH_COLUMNS[eng_key]
+        
+        # Skip if they're the same
         if eng_col == lang_col:
             continue
         
-        # Check exact match
+        # Check if the language column exists
         if lang_col in df.columns:
             rename_dict[lang_col] = eng_col
         else:
@@ -124,6 +197,7 @@ def map_columns(df, lang):
                     rename_dict[col] = eng_col
                     break
     
+    # Apply renaming
     if rename_dict:
         df = df.rename(columns=rename_dict)
     
@@ -134,41 +208,73 @@ def map_columns(df, lang):
 # ============================================================================
 
 def load_data_with_language(file):
-    """Load data with automatic language detection and column mapping."""
+    """
+    Load the Excel file, detect language, and map columns to English.
+    """
     raw = pd.read_excel(file)
+    
+    # Show debug info
+    st.write("**📋 First 10 columns in file:**")
+    st.write(list(raw.columns[:10]))
     
     # Detect language
     lang = detect_language(raw)
+    st.info(f"🌐 Detected language: **{lang}**")
     
     # Map columns to English
-    df = map_columns(raw, lang)
+    df = map_columns_to_english(raw, lang)
+    
+    # Show what was mapped
+    st.write("**📋 Columns after mapping (first 10):**")
+    st.write(list(df.columns[:10]))
     
     # Verify required columns exist
     required = [
-        "Collector Name", "Date and time", "Administration Post", 
-        "Village", "_Local GPS_latitude", "_Local GPS_longitude", 
-        "_Local GPS_precision", "_uuid"
+        "Collector Name", 
+        "Date and time", 
+        "Administration Post", 
+        "Village", 
+        "_Local GPS_latitude", 
+        "_Local GPS_longitude", 
+        "_Local GPS_precision", 
+        "_uuid"
     ]
     
-    missing = [c for c in required if c not in df.columns]
+    # Check which are present
+    present = [col for col in required if col in df.columns]
+    missing = [col for col in required if col not in df.columns]
+    
+    st.write(f"**Found {len(present)} of {len(required)} required columns**")
     
     if missing:
-        # Try to find alternatives for missing columns
-        for col in missing:
-            # Try to find similar column names
-            for df_col in df.columns:
-                if col.lower() in df_col.lower() or df_col.lower() in col.lower():
-                    if df_col != col:
-                        df = df.rename(columns={df_col: col})
-                        break
+        st.error(f"❌ Missing required columns: {missing}")
         
-        # Check again
-        missing = [c for c in required if c not in df.columns]
+        # Show what columns are available that might be similar
+        st.write("**🔍 Looking for alternatives...**")
+        for missing_col in missing:
+            # Try to find similar columns
+            similar = []
+            for col in df.columns:
+                # Check if the English column name appears in the actual column
+                if missing_col.lower() in col.lower() or col.lower() in missing_col.lower():
+                    similar.append(col)
+            if similar:
+                st.write(f"- `{missing_col}` → found similar: {similar}")
+        
+        # If it's just Administration Post, try to find it
+        if 'Administration Post' in missing:
+            # Try to find any column that might be administration post
+            for col in df.columns:
+                if any(word in col.lower() for word in ['post', 'administrat', 'admin']):
+                    st.write(f"💡 Found possible match: `{col}` → renaming to 'Administration Post'")
+                    df = df.rename(columns={col: 'Administration Post'})
+                    break
+        
+        # Re-check after attempts
+        missing = [col for col in required if col not in df.columns]
         
         if missing:
-            st.error(f"❌ Missing required columns: {missing}")
-            st.write("**Available columns in file:**")
-            st.write(list(df.columns))
+            st.error(f"❌ Still missing: {missing}")
             st.stop()
     
     return raw, df, lang
@@ -178,15 +284,25 @@ def load_data_with_language(file):
 # ============================================================================
 
 def find_species_typos(df):
-    """Find potential species typos using fuzzy matching."""
+    """
+    Find potential species typos using fuzzy matching.
+    """
     typos = []
     
     # Find species-related columns
     species_cols = []
     for col in df.columns:
-        for sp in SPECIES_LIST:
-            if sp in col or sp.replace(' ', '') in col.replace(' ', ''):
-                if any(keyword in col for keyword in ['Seagrass', 'du\'ut', 'rumput', 'spesies']):
+        # Check if it's a species column
+        is_species = False
+        for keyword in ['Seagrass species', 'du\'ut tasi', 'rumput laut', 'spesies']:
+            if keyword in col:
+                is_species = True
+                break
+        
+        if is_species:
+            # Check if it contains a species name
+            for sp in SPECIES_LIST:
+                if sp in col or sp.replace(' ', '') in col.replace(' ', ''):
                     species_cols.append(col)
                     break
     
@@ -198,6 +314,7 @@ def find_species_typos(df):
                 for sp in SPECIES_LIST:
                     if val.lower() == sp.lower():
                         continue
+                    # Use fuzzy matching
                     score = fuzz.token_sort_ratio(val.lower(), sp.lower())
                     if score > 80:
                         typos.append({
@@ -224,7 +341,9 @@ def find_species_typos(df):
 # ============================================================================
 
 def correct_species_typos(df, corrections):
-    """Apply corrections to species typos."""
+    """
+    Apply corrections to species typos.
+    """
     df_corrected = df.copy()
     log_entries = []
     
@@ -253,8 +372,6 @@ if 'review_status' not in st.session_state:
     st.session_state.review_status = {}
 if 'issue_notes' not in st.session_state:
     st.session_state.issue_notes = {}
-if 'lang' not in st.session_state:
-    st.session_state.lang = 'English'
 
 uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
 
@@ -265,8 +382,7 @@ if uploaded is None:
 # ---- Load data ----
 try:
     raw_df, df, lang = load_data_with_language(uploaded)
-    st.session_state.lang = lang
-    st.success(f"✅ Loaded {lang} version with {len(df)} records")
+    st.success(f"✅ Successfully loaded {lang} version with {len(df)} records")
 except Exception as e:
     st.error(f"Error: {str(e)}")
     st.stop()
