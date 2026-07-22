@@ -1,18 +1,16 @@
 """
-M4S Seagrass Monitoring (Metinaro, Timor-Leste) — QA Pipeline
-================================================================
-Turns a raw KoboToolbox export into an analysis-ready dataset.
+M4S Field Data QA Checker
+=========================
+Turns a raw KoboToolbox export into an analysis-ready dataset with QA flags.
 
-Pipeline stages (run in order, each is a plain function so you can
-call them one at a time from a notebook while debugging):
-
+Pipeline stages:
     1. load_data          -> read the raw .xlsx, keep an untouched copy
     2. standardize         -> parse dates, trim whitespace, fix dtypes
     3. validate             -> run every QA rule, collect issues
-    4. add_qa_columns      -> add QA flag columns to the raw dataset
+    4. add_qa_columns      -> add QA flag columns + Message column to raw data
     5. correct               -> apply ONLY the safe, reversible corrections
     6. generate_qa_report -> one Markdown report summarizing everything
-    7. export_outputs      -> write clean dataset + correction log + raw copy
+    7. export_outputs      -> write clean dataset + correction log + raw copy with QA flags
 
 Run directly:  python3 m4s_seagrass_qa.py raw_export.xlsx
 Outputs land in ./output/
@@ -30,12 +28,9 @@ from rapidfuzz import fuzz, process
 
 # ----------------------------------------------------------------------
 # PROJECT-SPECIFIC REFERENCE DATA
-# (This is the part that's genuinely M4S/Metinaro-specific. Change
-#  here, not in the logic below, when the project scope changes.)
 # ----------------------------------------------------------------------
 
-# Canonical seagrass species list (from the form's own choice list —
-# these are the 14 species the questionnaire was built around).
+# Canonical seagrass species list (from the form's own choice list)
 SPECIES_LIST = [
     "Halophila ovalis", "Halophila minor", "Halodule pinifolia",
     "Halodule uninervis", "Halophila decipiens", "Halophila beccarii",
@@ -44,18 +39,15 @@ SPECIES_LIST = [
     "Ruppia maritima", "Thalassodendron ciliatum",
 ]
 
-# Canonical admin geography for this project. Metinaro / Sabuli is the
-# ONLY valid combination for this pilot — anything else is either a
-# typo or a genuine out-of-scope submission that needs a human look.
+# Canonical admin geography
 CANONICAL_ADMIN_POST = "Metinaro"
 CANONICAL_VILLAGE = "Sabuli"
 
-# GPS sanity boundary. Centroid + radius rather than a bounding box,
-# because the survey site is a compact coastal flat, not a rectangle.
+# GPS sanity boundary
 SITE_CENTROID = (-8.51967, 125.7174723)   # (lat, lon), WGS84
-SITE_RADIUS_M = 500                        # flag anything further out
+SITE_RADIUS_M = 500
 
-# Fuzzy-match thresholds (0-100, rapidfuzz token_sort_ratio scale)
+# Fuzzy-match thresholds
 ENUMERATOR_MATCH_THRESHOLD = 85
 GEO_MATCH_THRESHOLD = 80
 
@@ -388,7 +380,7 @@ def validate_coverage_mismatch(df):
             if abs(species_total - total_cover) > 5:
                 issues.append(_new_issue(
                     i, r["_uuid"], "coverage_mismatch", total_col, "error",
-                    f"Species percentages sum to {species_total:.1f}% but total cover is {total_cover:.1f}% (difference: {abs(species_total - total_cover):.1f}%)"
+                    f"Individual species percentages sum to {species_total:.1f}% but total cover is {total_cover:.1f}% (difference: {abs(species_total - total_cover):.1f}%)"
                 ))
     
     return issues
@@ -410,8 +402,9 @@ def validate(df) -> pd.DataFrame:
 
 def add_qa_columns(df, issues):
     """
-    Add QA flag columns to the dataframe.
-    Each column indicates if a row has a specific type of issue.
+    Add QA flag columns and a Message column to the dataframe.
+    Each flag column indicates if a row has a specific type of issue.
+    The Message column contains detailed descriptions of all issues for each row.
     """
     df_qa = df.copy()
     
@@ -430,7 +423,13 @@ def add_qa_columns(df, issues):
     for col in qa_columns:
         df_qa[col] = ''
     
-    # Fill in the QA columns based on issues
+    # Initialize Message column
+    df_qa['Message'] = ''
+    
+    # Store messages for each row
+    row_messages = {idx: [] for idx in df_qa.index}
+    
+    # Fill in the QA columns and collect messages based on issues
     if len(issues) > 0:
         for idx, row in issues.iterrows():
             row_idx = row['row_index']
@@ -438,24 +437,98 @@ def add_qa_columns(df, issues):
             field = row['field']
             message = row['message']
             
-            # Map categories to QA columns
+            # Map categories to QA columns and build messages
             if category == 'species_typo':
                 df_qa.at[row_idx, 'qa_species_typo'] = 'Yes'
+                # Extract the detailed message
+                if "'" in message:
+                    # Try to extract the found value and suggestion
+                    import re
+                    match = re.search(r"'(.*?)'.*?'(.*?)'", message)
+                    if match:
+                        found = match.group(1)
+                        suggested = match.group(2)
+                        # Get similarity score if available
+                        score_match = re.search(r"\(Similarity: (\d+)%\)", message)
+                        score = score_match.group(1) if score_match else ""
+                        if score:
+                            row_messages[row_idx].append(f"Species typo: '{found}' found but should be '{suggested}' ({score}% similarity).")
+                        else:
+                            row_messages[row_idx].append(f"Species typo: '{found}' found but should be '{suggested}'.")
+                    else:
+                        row_messages[row_idx].append(f"Species typo: {message}")
+                else:
+                    row_messages[row_idx].append(f"Species typo: {message}")
+                    
             elif category == 'gps':
                 if 'precision' in field and '0.0' in message:
                     df_qa.at[row_idx, 'qa_gps_precision_0'] = 'Yes'
+                    row_messages[row_idx].append("GPS precision is 0.0 - this indicates no GPS fix was obtained. Record location manually.")
                 elif 'Missing GPS coordinates' in message:
                     df_qa.at[row_idx, 'qa_missing_coordinates'] = 'Yes'
+                    row_messages[row_idx].append("Missing GPS coordinates - both latitude and longitude are blank.")
                 elif 'outside project boundary' in message:
                     df_qa.at[row_idx, 'qa_outside_boundary'] = 'Yes'
+                    # Extract distance if available
+                    import re
+                    dist_match = re.search(r"(\d+)m from", message)
+                    if dist_match:
+                        dist = dist_match.group(1)
+                        row_messages[row_idx].append(f"GPS point is {dist}m from site centroid - outside the {SITE_RADIUS_M}m project boundary.")
+                    else:
+                        row_messages[row_idx].append(f"GPS point outside project boundary: {message}")
+                        
             elif category == 'duplicate' and field == '_uuid':
                 df_qa.at[row_idx, 'qa_duplicate_uuid'] = 'Yes'
+                # Count duplicates
+                dup_count = (df['_uuid'] == df_qa.at[row_idx, '_uuid']).sum()
+                row_messages[row_idx].append(f"Duplicate submission - same UUID appears {dup_count} times in the dataset.")
+                
             elif category == 'species' and 'marked present but no % cover recorded' in message:
                 df_qa.at[row_idx, 'qa_species_logic'] = 'Yes'
+                # Extract species name
+                import re
+                species_match = re.search(r"(.*?) marked present", message)
+                if species_match:
+                    species = species_match.group(1)
+                    row_messages[row_idx].append(f"Species logic error: {species} marked present but 0% cover recorded.")
+                else:
+                    row_messages[row_idx].append(f"Species logic error: {message}")
+                    
+            elif category == 'species' and '% cover recorded for' in message:
+                df_qa.at[row_idx, 'qa_species_logic'] = 'Yes'
+                import re
+                species_match = re.search(r"% cover recorded for (.*?) but", message)
+                if species_match:
+                    species = species_match.group(1)
+                    row_messages[row_idx].append(f"Species logic error: {species} has % cover recorded but species not marked present.")
+                else:
+                    row_messages[row_idx].append(f"Species logic error: {message}")
+                    
             elif category == 'geography':
                 df_qa.at[row_idx, 'qa_geography_mismatch'] = 'Yes'
+                import re
+                field_match = re.search(r"'(.*?)' does not", message)
+                if field_match:
+                    value = field_match.group(1)
+                    if 'Administration Post' in field:
+                        row_messages[row_idx].append(f"Geography mismatch: '{value}' does not match expected '{CANONICAL_ADMIN_POST}'.")
+                    elif 'Village' in field:
+                        row_messages[row_idx].append(f"Geography mismatch: '{value}' does not match expected '{CANONICAL_VILLAGE}'.")
+                    else:
+                        row_messages[row_idx].append(f"Geography mismatch: {message}")
+                else:
+                    row_messages[row_idx].append(f"Geography mismatch: {message}")
+                    
             elif category == 'coverage_mismatch':
                 df_qa.at[row_idx, 'qa_coverage_mismatch'] = 'Yes'
+                # Use the full message from the issue
+                row_messages[row_idx].append(f"Coverage mismatch: {message}")
+    
+    # Combine all messages for each row
+    for idx, messages in row_messages.items():
+        if messages:
+            df_qa.at[idx, 'Message'] = '; '.join(messages)
     
     return df_qa
 
@@ -645,7 +718,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
     passed = total - flagged_records
 
     lines = []
-    lines.append(f"# M4S Seagrass QA Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"# M4S Field Data QA Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
     lines.append("## Summary\n")
     lines.append(f"- Total records: **{total}**")
     lines.append(f"- Clean (no issues): **{passed}**")
