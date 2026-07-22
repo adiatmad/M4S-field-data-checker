@@ -224,6 +224,104 @@ def validate_species_logic(df):
     return issues
 
 
+def validate_species_typos(df):
+    """
+    Detect and flag any species names that don't match the canonical list.
+    Uses fuzzy matching to suggest corrections for typos.
+    """
+    issues = []
+    
+    # Get all species-related columns (presence columns)
+    species_presence_cols = [col for col in df.columns if col.startswith("Seagrass species present in the Quadrat/")]
+    
+    # Also check species names in the data itself (free-text fields)
+    # Check the "Seagrass species present in the Quadrat" column if it exists
+    if "Seagrass species present in the Quadrat" in df.columns:
+        for i, r in df.iterrows():
+            val = r.get("Seagrass species present in the Quadrat")
+            if pd.isna(val) or val == "":
+                continue
+            # Split by common separators
+            for sep in [",", " ", "  "]:
+                if sep in str(val):
+                    parts = str(val).split(sep)
+                    break
+            else:
+                parts = [str(val)]
+            
+            for part in parts:
+                part = part.strip()
+                if not part or part in ["1", "0", "Yes", "No"]:
+                    continue
+                    
+                # Check if this value matches any species (exact or fuzzy)
+                exact_match = part in SPECIES_LIST
+                if not exact_match:
+                    # Try fuzzy matching
+                    best_match = None
+                    best_score = 0
+                    for canonical in SPECIES_LIST:
+                        score = max(
+                            fuzz.token_sort_ratio(part.lower(), canonical.lower()),
+                            fuzz.WRatio(part.lower(), canonical.lower())
+                        )
+                        if score > best_score:
+                            best_score = score
+                            best_match = canonical
+                    
+                    if best_score >= 80:
+                        issues.append(_new_issue(
+                            i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
+                            f"Species '{part}' appears to be a typo. Did you mean '{best_match}'? (Similarity: {best_score}%)"
+                        ))
+                    else:
+                        issues.append(_new_issue(
+                            i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
+                            f"Unknown species '{part}'. Please check spelling. Did you mean one of: {', '.join(SPECIES_LIST[:5])}...?"
+                        ))
+    
+    # Check column headers for typos
+    for col in species_presence_cols:
+        species_name = col.split("/")[-1]
+        
+        # Skip if it's a valid species
+        if species_name in SPECIES_LIST:
+            continue
+        
+        # Check for close matches using fuzzy matching
+        best_match = None
+        best_score = 0
+        
+        for canonical in SPECIES_LIST:
+            score = max(
+                fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
+                fuzz.WRatio(species_name.lower(), canonical.lower())
+            )
+            if score > best_score:
+                best_score = score
+                best_match = canonical
+        
+        # If a close match is found (threshold 80), flag it as a typo
+        if best_score >= 80:
+            # Find all rows where this species is marked present
+            for i, r in df.iterrows():
+                if r[col] == 1:
+                    issues.append(_new_issue(
+                        i, r["_uuid"], "species_typo", col, "error",
+                        f"Species column '{species_name}' appears to be a typo. Did you mean '{best_match}'? (Similarity: {best_score}%)"
+                    ))
+        else:
+            # No close match - this is an unknown species
+            for i, r in df.iterrows():
+                if r[col] == 1:
+                    issues.append(_new_issue(
+                        i, r["_uuid"], "species_typo", col, "error",
+                        f"Unknown species column '{species_name}'. Please check spelling."
+                    ))
+    
+    return issues
+
+
 def validate_percent_fields(df):
     """Every standalone %-cover field (algal, epicover, sedimentation) in 0-100."""
     issues = []
@@ -315,9 +413,9 @@ def validate_duplicate_submissions(df):
 
 def validate(df) -> pd.DataFrame:
     all_issues = []
-    for fn in (validate_gps, validate_species_logic, validate_percent_fields,
-               validate_mandatory_fields, validate_timestamps, validate_photos,
-               validate_geography, validate_duplicate_submissions):
+    for fn in (validate_gps, validate_species_logic, validate_species_typos,
+               validate_percent_fields, validate_mandatory_fields, validate_timestamps,
+               validate_photos, validate_geography, validate_duplicate_submissions):
         all_issues.extend(fn(df))
     return pd.DataFrame(all_issues)
 
@@ -375,6 +473,106 @@ def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, d
             mapping[v] = canonical
     corrected = series.map(lambda v: mapping.get(v, v) if pd.notna(v) else v)
     return corrected, mapping
+
+
+def correct_species_typos(df):
+    """
+    Automatically correct obvious species typos using fuzzy matching.
+    Only corrects if the match is very confident (>90% similarity).
+    Also moves data from typo columns to correct columns.
+    """
+    df = df.copy()
+    log_rows = []
+    
+    species_presence_cols = [col for col in df.columns if col.startswith("Seagrass species present in the Quadrat/")]
+    
+    for col in species_presence_cols:
+        species_name = col.split("/")[-1]
+        
+        # Skip if already in canonical list
+        if species_name in SPECIES_LIST:
+            continue
+            
+        # Find best match
+        best_match = None
+        best_score = 0
+        
+        for canonical in SPECIES_LIST:
+            score = max(
+                fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
+                fuzz.WRatio(species_name.lower(), canonical.lower())
+            )
+            if score > best_score:
+                best_score = score
+                best_match = canonical
+        
+        # Only auto-correct if very confident (>90% similarity)
+        if best_score >= 90 and best_match:
+            # Get the correct column name
+            correct_col = f"Seagrass species present in the Quadrat/{best_match}"
+            
+            # Check if the correct column exists
+            if correct_col in df.columns:
+                # Move data from typo column to correct column
+                for i, r in df.iterrows():
+                    if r[col] == 1:
+                        # Log the correction
+                        log_rows.append(dict(
+                            row_index=i, 
+                            uuid=df.at[i, "_uuid"], 
+                            field=col,
+                            rule="species_typo_correction", 
+                            before=f"{species_name} marked present",
+                            after=f"Corrected to {best_match}",
+                            timestamp=datetime.now(timezone.utc).isoformat()
+                        ))
+                        # Set correct column to 1
+                        df.at[i, correct_col] = 1
+                        # Set typo column to 0
+                        df.at[i, col] = 0
+    
+    # Also correct species typos in the percent columns
+    species_pct_cols = [col for col in df.columns if col.startswith("Percent ") and " (%)" in col]
+    
+    for col in species_pct_cols:
+        # Extract species name
+        # e.g., "Percent Halophila ovalis (%)" -> "Halophila ovalis"
+        species_name = col.replace("Percent ", "").replace(" (%)", "")
+        
+        if species_name in SPECIES_LIST:
+            continue
+            
+        # Find best match
+        best_match = None
+        best_score = 0
+        
+        for canonical in SPECIES_LIST:
+            score = max(
+                fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
+                fuzz.WRatio(species_name.lower(), canonical.lower())
+            )
+            if score > best_score:
+                best_score = score
+                best_match = canonical
+        
+        if best_score >= 90 and best_match:
+            correct_col = f"Percent {best_match} (%)"
+            if correct_col in df.columns:
+                for i, r in df.iterrows():
+                    if pd.notna(r[col]) and r[col] > 0:
+                        log_rows.append(dict(
+                            row_index=i,
+                            uuid=df.at[i, "_uuid"],
+                            field=col,
+                            rule="species_percent_typo_correction",
+                            before=f"Data in column '{species_name}'",
+                            after=f"Moved to '{best_match}'",
+                            timestamp=datetime.now(timezone.utc).isoformat()
+                        ))
+                        df.at[i, correct_col] = r[col]
+                        df.at[i, col] = pd.NA
+    
+    return df, pd.DataFrame(log_rows)
 
 
 def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -436,6 +634,10 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                                   rule="geography_typo_fix", before=before_col.at[i],
                                   after=df.at[i, field],
                                   timestamp=datetime.now(timezone.utc).isoformat()))
+
+    # --- Safe correction 3: species typos (if very confident) ---
+    df, species_log = correct_species_typos(df)
+    log_rows.extend(species_log.to_dict('records') if len(species_log) else [])
 
     correction_log = pd.DataFrame(log_rows)
     return df, correction_log
