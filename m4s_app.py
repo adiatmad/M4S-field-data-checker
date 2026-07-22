@@ -1,6 +1,6 @@
 """
-M4S Seagrass QA — Streamlit front end
-======================================
+M4S Field Data QA Checker — Streamlit front end
+================================================
 Enhanced version with QA columns for easy filtering of issues.
 """
 
@@ -14,12 +14,12 @@ import uuid
 
 from m4s_seagrass_qa import (
     load_data, standardize, validate, correct, generate_qa_report,
-    add_qa_columns,  # Import the new function
+    add_qa_columns,
     SPECIES_LIST, CANONICAL_ADMIN_POST, CANONICAL_VILLAGE
 )
 
-st.set_page_config(page_title="M4S Seagrass QA", layout="wide")
-st.title("🌿 M4S Seagrass QA — Metinaro")
+st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
+st.title("🌿 M4S Field Data QA Checker")
 st.caption("Upload the raw Kobo export (.xlsx). Nothing is saved to a server — "
            "everything happens in this session and outputs are yours to download.")
 
@@ -64,7 +64,8 @@ st.divider()
 # ---- QA COLUMNS OVERVIEW ----
 st.subheader("🔍 QA Columns — Quick Issue Identification")
 st.markdown("""
-The raw data now includes QA flag columns. Each column indicates if a row has a specific type of issue.
+The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
+The Message column provides detailed descriptions of all issues for each row.
 **Filter by any column to find rows that need fixing!**
 """)
 
@@ -77,6 +78,9 @@ qa_summary = {}
 for col in qa_cols:
     if col in raw_with_qa.columns:
         count = (raw_with_qa[col] == 'Yes').sum()
+        # Also check for "Yes" with additional info (coverage mismatch)
+        if col == 'qa_coverage_mismatch':
+            count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
         qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
 
 if sum(qa_summary.values()) > 0:
@@ -98,7 +102,7 @@ st.subheader("📊 Filter Raw Data by QA Flags")
 display_df = raw_with_qa.copy()
 
 # Add filter options
-filter_cols = st.columns(3)
+filter_cols = st.columns(4)
 with filter_cols[0]:
     show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
 with filter_cols[1]:
@@ -111,6 +115,8 @@ with filter_cols[1]:
 with filter_cols[2]:
     if not show_only_with_issues:
         search = st.text_input("Search in data", placeholder="Search any column...")
+with filter_cols[3]:
+    show_message_only = st.checkbox("Show only rows with Message", value=False)
 
 # Apply filters
 if show_only_with_issues:
@@ -118,8 +124,13 @@ if show_only_with_issues:
     mask = pd.Series(False, index=display_df.index)
     for col in qa_cols_for_filter:
         if col in display_df.columns:
-            mask = mask | (display_df[col] == 'Yes')
+            if col == 'qa_coverage_mismatch':
+                mask = mask | display_df[col].str.startswith('Yes', na=False)
+            else:
+                mask = mask | (display_df[col] == 'Yes')
     display_df = display_df[mask]
+elif show_message_only:
+    display_df = display_df[display_df['Message'] != '']
 elif search:
     # Simple search across all columns
     mask = pd.Series(False, index=display_df.index)
@@ -130,7 +141,7 @@ elif search:
 # Show count
 st.caption(f"Showing {len(display_df)} rows")
 
-# Display the data - highlight QA columns
+# Display the data - highlight QA columns and Message
 st.dataframe(
     display_df,
     width='stretch',
@@ -148,15 +159,15 @@ st.divider()
 col1, col2, col3 = st.columns(3)
 with col1:
     st.download_button(
-        "📥 Download Raw Data with QA Flags",
+        "📥 Download Raw Data with QA Flags & Messages",
         raw_with_qa.to_csv(index=False),
-        file_name=f"raw_with_qa_flags_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+        file_name="raw_with_qa_flags.csv"
     )
 with col2:
     st.download_button(
         "📥 Download QA Issues List",
         issues.to_csv(index=False),
-        file_name=f"qa_issues_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+        file_name="qa_issues.csv"
     )
 with col3:
     st.download_button(
@@ -219,11 +230,17 @@ with st.expander("📖 QA Column Reference"):
     | **qa_geography_mismatch** | Geography mismatch | Admin Post/Village doesn't match project area |
     | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to total cover |
     
-    ### How to Use
-    1. **Filter by any QA column** to find all rows with a specific issue
-    2. **Download the filtered view** to fix issues in Excel
-    3. **Fix issues in the raw data** and re-upload
-    4. **Use the raw_with_qa_flags.csv** as a checklist during data cleaning
+    ### Message Column
+    The `Message` column provides detailed descriptions of all issues for each row.
+    Multiple issues are separated by semicolons (;).
+    
+    ### How to Use This Tool
+    1. **Review the summary** to understand what issues exist
+    2. **Filter by QA columns** to find all rows with specific issues
+    3. **Check the Message column** for detailed error descriptions
+    4. **Download raw_with_qa_flags.csv** to fix issues in Excel
+    5. **Fix issues in the raw data** and re-upload
+    6. **Use the Message column** as a checklist during data cleaning
     """)
 
 st.caption(f"📁 Dataset: {uploaded.name} | 📊 Records: {total} | ⚠️ Issues: {len(issues)} | 🔧 Corrections: {len(correction_log)}")
