@@ -4,3 +4,4 @@ numpy
 rapidfuzz
 openpyxl
 tabulate
+plotly
