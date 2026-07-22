@@ -70,17 +70,17 @@ The Message column provides detailed descriptions of all issues for each row.
 """)
 
 # Show QA columns summary
-qa_cols = ['qa_species_typo', 'qa_gps_precision_0', 'qa_missing_coordinates', 
+qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates', 
            'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
-           'qa_geography_mismatch', 'qa_coverage_mismatch']
+           'qa_coverage_mismatch']
 
 qa_summary = {}
 for col in qa_cols:
     if col in raw_with_qa.columns:
-        count = (raw_with_qa[col] == 'Yes').sum()
-        # Also check for "Yes" with additional info (coverage mismatch)
         if col == 'qa_coverage_mismatch':
             count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
+        else:
+            count = (raw_with_qa[col] == 'Yes').sum()
         qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
 
 if sum(qa_summary.values()) > 0:
@@ -221,14 +221,12 @@ with st.expander("📖 QA Column Reference"):
     
     | Column | Description | When triggered |
     |--------|-------------|----------------|
-    | **qa_species_typo** | Species name typo | Species name doesn't match `SPECIES_LIST` |
     | **qa_gps_precision_0** | GPS precision is 0.0 | Recorded precision is 0.0 (likely no GPS fix) |
     | **qa_missing_coordinates** | Missing GPS coordinates | No lat/long recorded |
     | **qa_outside_boundary** | Outside survey area | GPS point >500m from site centroid |
     | **qa_duplicate_uuid** | Duplicate submission | Same UUID appears more than once |
     | **qa_species_logic** | Species logic error | Species marked present but 0% cover, or vice versa |
-    | **qa_geography_mismatch** | Geography mismatch | Admin Post/Village doesn't match project area |
-    | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to total cover |
+    | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to Epicover Percentage |
     
     ### Message Column
     The `Message` column provides detailed descriptions of all issues for each row.
