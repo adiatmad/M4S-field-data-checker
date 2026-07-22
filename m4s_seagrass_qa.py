@@ -9,21 +9,13 @@ call them one at a time from a notebook while debugging):
     1. load_data          -> read the raw .xlsx, keep an untouched copy
     2. standardize         -> parse dates, trim whitespace, fix dtypes
     3. validate             -> run every QA rule, collect issues
-    4. correct               -> apply ONLY the safe, reversible corrections
-    5. generate_qa_report -> one Markdown report summarizing everything
-    6. export_outputs      -> write clean dataset + correction log + raw copy
+    4. add_qa_columns      -> add QA flag columns to the raw dataset
+    5. correct               -> apply ONLY the safe, reversible corrections
+    6. generate_qa_report -> one Markdown report summarizing everything
+    7. export_outputs      -> write clean dataset + correction log + raw copy
 
 Run directly:  python3 m4s_seagrass_qa.py raw_export.xlsx
 Outputs land in ./output/
-
-Design notes for future-you (see accompanying README for the full
-rationale) — this is intentionally specific to the M4S Seagrass form
-schema below, not a generic Kobo cleaner. Column names are matched
-literally, not by position, so it survives Kobo re-ordering columns
-between exports, but it WILL break if a question is renamed. That's
-by design: a silent schema change on an ecological dataset is a
-"stop and look" event, not a "guess and continue" event, so the
-pipeline hard-fails with a clear message instead.
 """
 
 import sys
@@ -60,10 +52,6 @@ CANONICAL_VILLAGE = "Sabuli"
 
 # GPS sanity boundary. Centroid + radius rather than a bounding box,
 # because the survey site is a compact coastal flat, not a rectangle.
-# Values below were derived from this dataset's own distribution
-# (see README) — 99% of points fall within ~320m of the centroid;
-# one point sat at 2.9km. Recompute per season if the survey area
-# changes.
 SITE_CENTROID = (-8.51967, 125.7174723)   # (lat, lon), WGS84
 SITE_RADIUS_M = 500                        # flag anything further out
 
@@ -72,12 +60,12 @@ ENUMERATOR_MATCH_THRESHOLD = 85
 GEO_MATCH_THRESHOLD = 80
 
 # GPS quality thresholds
-GPS_PRECISION_WARN_M = 10     # Kobo's own reported horizontal accuracy
+GPS_PRECISION_WARN_M = 10
 GPS_PRECISION_ERROR_M = 30
 
-# Survey duration sanity (seconds), based on this form's own distribution
-DURATION_TOO_FAST_S = 60          # can't credibly complete the form
-DURATION_LONG_SESSION_S = 8 * 3600  # likely a form left open/resumed
+# Survey duration sanity (seconds)
+DURATION_TOO_FAST_S = 60
+DURATION_LONG_SESSION_S = 8 * 3600
 
 
 # ----------------------------------------------------------------------
@@ -85,12 +73,7 @@ DURATION_LONG_SESSION_S = 8 * 3600  # likely a form left open/resumed
 # ----------------------------------------------------------------------
 
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the raw Kobo export. Returns (raw_df, working_df).
-
-    raw_df is never mutated again — it's what "preserve the original
-    raw data" in the brief refers to. working_df is what every later
-    stage touches.
-    """
+    """Read the raw Kobo export. Returns (raw_df, working_df)."""
     raw = pd.read_excel(path)
     required = [
         "start", "end", "Collector Name", "Date and time",
@@ -110,14 +93,12 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 # ----------------------------------------------------------------------
 # STAGE 2 — STANDARDIZE
-# (type coercion, whitespace, nothing that changes meaning yet)
 # ----------------------------------------------------------------------
 
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
     obj_cols = df.select_dtypes(include="object").columns
     for c in obj_cols:
         df[c] = df[c].apply(lambda v: v.strip() if isinstance(v, str) else v)
-        # collapse internal double spaces too
         df[c] = df[c].apply(
             lambda v: re.sub(r"\s+", " ", v) if isinstance(v, str) else v
         )
@@ -130,7 +111,6 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
     df["_duration_seconds"] = (df["end"] - df["start"]).dt.total_seconds()
-    # numeric coercion for everything that should be numeric
     numeric_like = [c for c in df.columns if "(%)" in c or c in (
         "Water Level (Cm)", "_Local GPS_latitude", "_Local GPS_longitude",
         "_Local GPS_altitude", "_Local GPS_precision",
@@ -142,8 +122,6 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
 
 # ----------------------------------------------------------------------
 # STAGE 3 — VALIDATE
-# Every rule appends rows to `issues`: one row per (record, problem).
-# severity: "error" (blocks analysis use) | "warning" (flag for review)
 # ----------------------------------------------------------------------
 
 def _new_issue(idx, uuid, category, field, severity, message):
@@ -180,8 +158,6 @@ def validate_gps(df):
         if dist > SITE_RADIUS_M:
             issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
                                       f"{dist:.0f}m from survey site centroid — outside project boundary"))
-    # duplicate coordinates across different records (possible "forgot to
-    # refresh GPS" — flagged, never auto-corrected)
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
@@ -225,73 +201,19 @@ def validate_species_logic(df):
 
 
 def validate_species_typos(df):
-    """
-    Detect and flag any species names that don't match the canonical list.
-    Uses fuzzy matching to suggest corrections for typos.
-    """
+    """Detect and flag any species names that don't match the canonical list."""
     issues = []
     
-    # Get all species-related columns (presence columns)
     species_presence_cols = [col for col in df.columns if col.startswith("Seagrass species present in the Quadrat/")]
-    
-    # Also check species names in the data itself (free-text fields)
-    # Check the "Seagrass species present in the Quadrat" column if it exists
-    if "Seagrass species present in the Quadrat" in df.columns:
-        for i, r in df.iterrows():
-            val = r.get("Seagrass species present in the Quadrat")
-            if pd.isna(val) or val == "":
-                continue
-            # Split by common separators
-            for sep in [",", " ", "  "]:
-                if sep in str(val):
-                    parts = str(val).split(sep)
-                    break
-            else:
-                parts = [str(val)]
-            
-            for part in parts:
-                part = part.strip()
-                if not part or part in ["1", "0", "Yes", "No"]:
-                    continue
-                    
-                # Check if this value matches any species (exact or fuzzy)
-                exact_match = part in SPECIES_LIST
-                if not exact_match:
-                    # Try fuzzy matching
-                    best_match = None
-                    best_score = 0
-                    for canonical in SPECIES_LIST:
-                        score = max(
-                            fuzz.token_sort_ratio(part.lower(), canonical.lower()),
-                            fuzz.WRatio(part.lower(), canonical.lower())
-                        )
-                        if score > best_score:
-                            best_score = score
-                            best_match = canonical
-                    
-                    if best_score >= 80:
-                        issues.append(_new_issue(
-                            i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
-                            f"Species '{part}' appears to be a typo. Did you mean '{best_match}'? (Similarity: {best_score}%)"
-                        ))
-                    else:
-                        issues.append(_new_issue(
-                            i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
-                            f"Unknown species '{part}'. Please check spelling. Did you mean one of: {', '.join(SPECIES_LIST[:5])}...?"
-                        ))
     
     # Check column headers for typos
     for col in species_presence_cols:
         species_name = col.split("/")[-1]
-        
-        # Skip if it's a valid species
         if species_name in SPECIES_LIST:
             continue
         
-        # Check for close matches using fuzzy matching
         best_match = None
         best_score = 0
-        
         for canonical in SPECIES_LIST:
             score = max(
                 fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
@@ -301,9 +223,7 @@ def validate_species_typos(df):
                 best_score = score
                 best_match = canonical
         
-        # If a close match is found (threshold 80), flag it as a typo
         if best_score >= 80:
-            # Find all rows where this species is marked present
             for i, r in df.iterrows():
                 if r[col] == 1:
                     issues.append(_new_issue(
@@ -311,7 +231,6 @@ def validate_species_typos(df):
                         f"Species column '{species_name}' appears to be a typo. Did you mean '{best_match}'? (Similarity: {best_score}%)"
                     ))
         else:
-            # No close match - this is an unknown species
             for i, r in df.iterrows():
                 if r[col] == 1:
                     issues.append(_new_issue(
@@ -319,11 +238,48 @@ def validate_species_typos(df):
                         f"Unknown species column '{species_name}'. Please check spelling."
                     ))
     
+    # Check data values for typos
+    if "Seagrass species present in the Quadrat" in df.columns:
+        for i, r in df.iterrows():
+            val = r.get("Seagrass species present in the Quadrat")
+            if pd.isna(val) or val == "":
+                continue
+            for sep in [",", "  ", " "]:
+                if sep in str(val):
+                    parts = [p.strip() for p in str(val).split(sep) if p.strip()]
+                    break
+            else:
+                parts = [str(val).strip()]
+            
+            for part in parts:
+                if part in ["1", "0", "Yes", "No"] or part in SPECIES_LIST:
+                    continue
+                best_match = None
+                best_score = 0
+                for canonical in SPECIES_LIST:
+                    score = max(
+                        fuzz.token_sort_ratio(part.lower(), canonical.lower()),
+                        fuzz.WRatio(part.lower(), canonical.lower())
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_match = canonical
+                
+                if best_score >= 80:
+                    issues.append(_new_issue(
+                        i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
+                        f"Species '{part}' appears to be a typo. Did you mean '{best_match}'? (Similarity: {best_score}%)"
+                    ))
+                else:
+                    issues.append(_new_issue(
+                        i, r["_uuid"], "species_typo", "Seagrass species present in the Quadrat", "error",
+                        f"Unknown species '{part}'. Please check spelling."
+                    ))
+    
     return issues
 
 
 def validate_percent_fields(df):
-    """Every standalone %-cover field (algal, epicover, sedimentation) in 0-100."""
     issues = []
     pct_cols = [c for c in ["Percentage of Algal Cover (%)", "Epicover Percentage (%)"] if c in df.columns]
     for i, r in df.iterrows():
@@ -377,10 +333,6 @@ def validate_photos(df):
 
 
 def validate_geography(df):
-    """Flag admin post / village values that don't match the canonical
-    project geography closely enough to be an obvious typo — these are
-    NEVER auto-corrected (only 'safe' string cleanup is), because a
-    genuinely different village is a real, meaningful data point."""
     issues = []
     for i, r in df.iterrows():
         for field, canon in [("Administration Post", CANONICAL_ADMIN_POST),
@@ -401,7 +353,6 @@ def validate_duplicate_submissions(df):
     for i, r in df[dup].iterrows():
         issues.append(_new_issue(i, r["_uuid"], "duplicate", "_uuid", "error",
                                   "Duplicate _uuid — same submission ingested twice"))
-    # same collector + transect + quadrat + date submitted more than once
     logical_key = ["Collector Name", "Transect Number", "Quadrat Number", "Date and time"]
     if all(k in df.columns for k in logical_key):
         dup2 = df.duplicated(subset=logical_key, keep=False)
@@ -411,29 +362,110 @@ def validate_duplicate_submissions(df):
     return issues
 
 
+def validate_coverage_mismatch(df):
+    """Check if individual species percentages add up to total cover."""
+    issues = []
+    
+    # Get species percent columns
+    pct_cols = [col for col in df.columns if col.startswith("Percent ") and " (%)" in col]
+    total_col = "Percentage of Algal Cover (%)"  # This is the total cover field
+    
+    if total_col in df.columns:
+        for i, r in df.iterrows():
+            total_cover = r[total_col]
+            if pd.isna(total_cover):
+                continue
+            
+            # Sum up individual species percentages
+            species_total = 0
+            for col in pct_cols:
+                val = r[col]
+                if pd.notna(val):
+                    species_total += val
+            
+            # Check if species total is significantly different from total cover
+            # Allow 5% tolerance for rounding/estimation errors
+            if abs(species_total - total_cover) > 5:
+                issues.append(_new_issue(
+                    i, r["_uuid"], "coverage_mismatch", total_col, "error",
+                    f"Species percentages sum to {species_total:.1f}% but total cover is {total_cover:.1f}% (difference: {abs(species_total - total_cover):.1f}%)"
+                ))
+    
+    return issues
+
+
 def validate(df) -> pd.DataFrame:
     all_issues = []
     for fn in (validate_gps, validate_species_logic, validate_species_typos,
                validate_percent_fields, validate_mandatory_fields, validate_timestamps,
-               validate_photos, validate_geography, validate_duplicate_submissions):
+               validate_photos, validate_geography, validate_duplicate_submissions,
+               validate_coverage_mismatch):
         all_issues.extend(fn(df))
     return pd.DataFrame(all_issues)
 
 
 # ----------------------------------------------------------------------
-# STAGE 4 — CORRECT
-# Only SAFE, reversible corrections happen here. Every change is logged
-# with before/after so it's auditable. Nothing scientific is ever
-# touched automatically (GPS, % cover, water depth, species presence).
+# STAGE 4 — ADD QA COLUMNS TO RAW DATA
+# ----------------------------------------------------------------------
+
+def add_qa_columns(df, issues):
+    """
+    Add QA flag columns to the dataframe.
+    Each column indicates if a row has a specific type of issue.
+    """
+    df_qa = df.copy()
+    
+    # Initialize all QA columns with empty strings
+    qa_columns = [
+        'qa_species_typo',
+        'qa_gps_precision_0',
+        'qa_missing_coordinates',
+        'qa_outside_boundary',
+        'qa_duplicate_uuid',
+        'qa_species_logic',
+        'qa_geography_mismatch',
+        'qa_coverage_mismatch'
+    ]
+    
+    for col in qa_columns:
+        df_qa[col] = ''
+    
+    # Fill in the QA columns based on issues
+    if len(issues) > 0:
+        for idx, row in issues.iterrows():
+            row_idx = row['row_index']
+            category = row['category']
+            field = row['field']
+            message = row['message']
+            
+            # Map categories to QA columns
+            if category == 'species_typo':
+                df_qa.at[row_idx, 'qa_species_typo'] = 'Yes'
+            elif category == 'gps':
+                if 'precision' in field and '0.0' in message:
+                    df_qa.at[row_idx, 'qa_gps_precision_0'] = 'Yes'
+                elif 'Missing GPS coordinates' in message:
+                    df_qa.at[row_idx, 'qa_missing_coordinates'] = 'Yes'
+                elif 'outside project boundary' in message:
+                    df_qa.at[row_idx, 'qa_outside_boundary'] = 'Yes'
+            elif category == 'duplicate' and field == '_uuid':
+                df_qa.at[row_idx, 'qa_duplicate_uuid'] = 'Yes'
+            elif category == 'species' and 'marked present but no % cover recorded' in message:
+                df_qa.at[row_idx, 'qa_species_logic'] = 'Yes'
+            elif category == 'geography':
+                df_qa.at[row_idx, 'qa_geography_mismatch'] = 'Yes'
+            elif category == 'coverage_mismatch':
+                df_qa.at[row_idx, 'qa_coverage_mismatch'] = 'Yes'
+    
+    return df_qa
+
+
+# ----------------------------------------------------------------------
+# STAGE 5 — CORRECT
 # ----------------------------------------------------------------------
 
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
-    """Cluster near-identical free-text values (case/underscore/spacing
-    variants of the same name) and map each cluster to its most frequent
-    exact spelling. Returns (corrected_series, {original: canonical})."""
     values = series.dropna().unique().tolist()
-    # normalize underscores -> spaces before fuzzy comparison, since
-    # that's a formatting artifact, not a spelling difference
     norm = {v: re.sub(r"\s+", " ", v.replace("_", " ")).strip() for v in values}
     counts = series.value_counts()
 
@@ -453,10 +485,6 @@ def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, d
         clusters.append(cluster)
 
     def format_quality(v: str) -> int:
-        # Prefer "Title Case With Spaces" over "snake_case" or
-        # "all lowercase" — underscore/lowercase forms are a system
-        # artifact (e.g. a username), not the person's real name
-        # formatting, regardless of how often they show up.
         score = 0
         if "_" not in v:
             score += 2
@@ -466,8 +494,6 @@ def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, d
 
     mapping = {}
     for cluster in clusters:
-        # canonical = best-formatted spelling first, most frequent as
-        # tiebreaker
         canonical = max(cluster, key=lambda v: (format_quality(v), counts[v]))
         for v in cluster:
             mapping[v] = canonical
@@ -476,11 +502,7 @@ def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, d
 
 
 def correct_species_typos(df):
-    """
-    Automatically correct obvious species typos using fuzzy matching.
-    Only corrects if the match is very confident (>90% similarity).
-    Also moves data from typo columns to correct columns.
-    """
+    """Automatically correct obvious species typos using fuzzy matching."""
     df = df.copy()
     log_rows = []
     
@@ -488,15 +510,11 @@ def correct_species_typos(df):
     
     for col in species_presence_cols:
         species_name = col.split("/")[-1]
-        
-        # Skip if already in canonical list
         if species_name in SPECIES_LIST:
             continue
             
-        # Find best match
         best_match = None
         best_score = 0
-        
         for canonical in SPECIES_LIST:
             score = max(
                 fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
@@ -506,17 +524,11 @@ def correct_species_typos(df):
                 best_score = score
                 best_match = canonical
         
-        # Only auto-correct if very confident (>90% similarity)
         if best_score >= 90 and best_match:
-            # Get the correct column name
             correct_col = f"Seagrass species present in the Quadrat/{best_match}"
-            
-            # Check if the correct column exists
             if correct_col in df.columns:
-                # Move data from typo column to correct column
                 for i, r in df.iterrows():
                     if r[col] == 1:
-                        # Log the correction
                         log_rows.append(dict(
                             row_index=i, 
                             uuid=df.at[i, "_uuid"], 
@@ -526,26 +538,17 @@ def correct_species_typos(df):
                             after=f"Corrected to {best_match}",
                             timestamp=datetime.now(timezone.utc).isoformat()
                         ))
-                        # Set correct column to 1
                         df.at[i, correct_col] = 1
-                        # Set typo column to 0
                         df.at[i, col] = 0
     
-    # Also correct species typos in the percent columns
     species_pct_cols = [col for col in df.columns if col.startswith("Percent ") and " (%)" in col]
-    
     for col in species_pct_cols:
-        # Extract species name
-        # e.g., "Percent Halophila ovalis (%)" -> "Halophila ovalis"
         species_name = col.replace("Percent ", "").replace(" (%)", "")
-        
         if species_name in SPECIES_LIST:
             continue
             
-        # Find best match
         best_match = None
         best_score = 0
-        
         for canonical in SPECIES_LIST:
             score = max(
                 fuzz.token_sort_ratio(species_name.lower(), canonical.lower()),
@@ -587,19 +590,11 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                                   rule=rule, before=before, after=after_val,
                                   timestamp=datetime.now(timezone.utc).isoformat()))
 
-    # --- Safe correction 1: enumerator name normalization (case,
-    # underscores, extra whitespace collapsed to one canonical spelling
-    # per person, chosen as their most-used exact spelling) ---
     corrected, mapping = _fuzzy_canonicalize(df["Collector Name"], ENUMERATOR_MATCH_THRESHOLD)
     changed_mask = (df["Collector Name"] != corrected) & df["Collector Name"].notna()
     log_change(changed_mask, "Collector Name", mapping, "enumerator_name_normalization")
     df["Collector Name"] = corrected
 
-    # Any name that's STILL snake_case at this point had no duplicate
-    # variant to cluster against — it's just a raw-formatting artifact
-    # (e.g. a Kobo username used as the free-text answer). Reformat to
-    # "Title Case With Spaces": pure capitalization/spacing, so it's
-    # safe per policy even though no clustering was involved.
     before_fmt = df["Collector Name"].copy()
 
     def format_fix(v):
@@ -615,10 +610,6 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                               after=df.at[i, "Collector Name"],
                               timestamp=datetime.now(timezone.utc).isoformat()))
 
-    # --- Safe correction 2: obvious capitalization/whitespace typos in
-    # Administration Post ONLY when they fuzzy-match the single known
-    # canonical value tightly (>= ENUMERATOR_MATCH_THRESHOLD, i.e. a
-    # near-exact string match, not a "different place" match) ---
     for field, canon in [("Administration Post", CANONICAL_ADMIN_POST),
                           ("Village", CANONICAL_VILLAGE)]:
         before_col = df[field].copy()
@@ -635,7 +626,6 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                                   after=df.at[i, field],
                                   timestamp=datetime.now(timezone.utc).isoformat()))
 
-    # --- Safe correction 3: species typos (if very confident) ---
     df, species_log = correct_species_typos(df)
     log_rows.extend(species_log.to_dict('records') if len(species_log) else [])
 
@@ -644,7 +634,7 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------
-# STAGE 5 — QA REPORT
+# STAGE 6 — QA REPORT
 # ----------------------------------------------------------------------
 
 def generate_qa_report(df, issues, correction_log, out_path):
@@ -689,13 +679,17 @@ def generate_qa_report(df, issues, correction_log, out_path):
 
 
 # ----------------------------------------------------------------------
-# STAGE 6 — EXPORT
+# STAGE 7 — EXPORT
 # ----------------------------------------------------------------------
 
 def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    raw_df.to_csv(out_dir / "raw_preserved.csv", index=False)
+    
+    # Add QA columns to the raw data before export
+    raw_with_qa = add_qa_columns(raw_df, issues)
+    
+    raw_with_qa.to_csv(out_dir / "raw_with_qa_flags.csv", index=False)
     clean_df.to_csv(out_dir / "clean_dataset.csv", index=False)
     issues.to_csv(out_dir / "qa_issues.csv", index=False)
     correction_log.to_csv(out_dir / "correction_log.csv", index=False)
@@ -709,8 +703,7 @@ def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
 def run(input_path: str, out_dir: str = "output"):
     raw_df, df = load_data(input_path)
     df = standardize(df)
-    issues = validate(df)                 # validate BEFORE correcting, so the
-                                            # report reflects what came in raw
+    issues = validate(df)
     df, correction_log = correct(df)
     export_outputs(raw_df, df, issues, correction_log, out_dir)
     print(f"Done. {len(df)} records processed, {len(issues)} issues found, "
