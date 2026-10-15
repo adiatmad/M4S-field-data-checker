@@ -76,7 +76,7 @@ def test_structural_check_crash_is_reported_and_value_stage_is_not_run(monkeypat
     monkeypatch.setattr(checker, "validate_dataframe", unexpected_value_check)
 
     with pytest.raises(QualityCheckError, match="structural validation") as exc:
-        run_quality_checks(b"id\\n1\\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
+        run_quality_checks(b"id\n1\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
 
     assert exc.value.stage == "structural validation"
     assert "internal details" not in str(exc.value)
@@ -93,7 +93,7 @@ def test_value_check_crash_is_reported_without_returning_partial_findings(monkey
     monkeypatch.setattr(checker, "validate_dataframe", fail_values)
 
     with pytest.raises(QualityCheckError, match="value validation") as exc:
-        run_quality_checks(b"id\\n1\\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
+        run_quality_checks(b"id\n1\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
 
     assert exc.value.stage == "value validation"
     assert "internal details" not in str(exc.value)
