@@ -4,7 +4,7 @@ A Streamlit application and command-line pipeline for quality assurance of M4S s
 
 ## Choose your workflow
 
-### Generic raw Kobo CSV checker (new)
+### Generic raw Kobo CSV checker
 
 Use this when you have a CSV export and want general quality flags without assuming a particular survey form.
 
@@ -15,7 +15,7 @@ Run locally:
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
+# Windows: .venv\\Scripts\\activate
 # macOS/Linux: source .venv/bin/activate
 python -m pip install -r requirements.txt
 streamlit run kobo_csv_quality_app.py
@@ -23,7 +23,9 @@ streamlit run kobo_csv_quality_app.py
 
 The app reports findings with category, severity, row reference, column, and message, and lets you download findings as CSV. It preserves CSV values as strings so identifiers such as `0012` are not silently converted to `12`.
 
-### M4S seagrass XLSX workflow (existing)
+**Failure handling:** structural and value validation run through a shared orchestration function. If either stage raises an unexpected error, the app displays a safe failure message and stops the run rather than presenting partial findings as a completed validation. Internal exception details are not exposed in the UI.
+
+### M4S seagrass XLSX workflow
 
 - `m4s_app.py` — Streamlit interface for the M4S Kobo XLSX export, with M4S-specific rules.
 - `m4s_seagrass_qa.py` — command-line M4S QA pipeline.
@@ -42,13 +44,17 @@ The generic checker runs in the Streamlit process and does not intentionally sen
 
 ## Limitations
 
-Generic checks are screening aids, not a replacement for the survey's XLSForm. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker.
+Generic checks are screening aids, not a replacement for the survey's XLSForm. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker. A clean result means only that the enabled checks emitted no findings; it does not certify the entire survey as valid.
 
 ## Tests
 
+Run the automated test suite from the repository root:
+
 ```bash
-pytest -q
+python -m pytest -q
 ```
+
+The generic CSV checker and validation failure handling have regression coverage. GitHub Actions passed dependency installation, Python compilation, and the full test suite for the merged change. Streamlit UI interactions were not separately exercised, so automated checks should not be interpreted as full manual UI or production validation.
 
 See [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), and the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md) for the validation flow, failure boundaries, and bounded development/verification loop.
 
