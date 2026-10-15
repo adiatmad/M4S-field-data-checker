@@ -20,8 +20,8 @@ from m4s_seagrass_qa import (
 
 st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
 st.title("🌿 M4S Field Data QA Checker")
-st.caption("Upload the raw Kobo export (.xlsx). Nothing is saved to a server — "
-           "everything happens in this session and outputs are yours to download.")
+st.caption("Upload the raw Kobo export (.xlsx). Files are processed by the server running this app. "
+           "For sensitive survey data, run locally or use only an approved, access-controlled deployment.")
 
 uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
 
