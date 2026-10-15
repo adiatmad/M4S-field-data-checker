@@ -87,7 +87,7 @@ def _normalize_header(value) -> str:
     """Normalize whitespace and Unicode for alias lookup without rewriting source headers."""
     if not isinstance(value, str):
         return value
-    return re.sub(r"\\s+", " ", unicodedata.normalize("NFKC", value)).strip()
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip()
 
 
 def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
