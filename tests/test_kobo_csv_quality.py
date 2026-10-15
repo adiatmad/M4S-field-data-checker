@@ -116,3 +116,23 @@ def test_run_quality_checks_applies_optional_contract():
     assert len(contract_findings) == 1
     assert contract_findings.iloc[0]["column"] == "consent"
     assert contract_findings.iloc[0]["row_number"] == 3
+
+def test_contract_rule_for_missing_column_is_reported_instead_of_skipped():
+    data = b"record_id,consent\\n001,yes\\n"
+    frame = read_csv_bytes(data)
+
+    findings = run_quality_checks(
+        data, "survey.csv", frame,
+        duplicate_rows=False,
+        outlier_checks=False,
+        contract={"columns": {"consnet": {"allowed_values": ["yes", "no"]}}},
+    )
+
+    missing_column = findings[
+        (findings["category"] == "contract")
+        & (findings["column"] == "consnet")
+    ]
+    assert len(missing_column) == 1
+    assert missing_column.iloc[0]["row_number"] == ""
+    assert "configured checks could not run" in missing_column.iloc[0]["message"]
+
