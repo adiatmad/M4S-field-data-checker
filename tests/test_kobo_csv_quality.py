@@ -39,3 +39,22 @@ def test_finds_missing_cells_and_exact_duplicate_rows():
 def test_summary_empty_findings():
     summary = findings_summary(pd.DataFrame(columns=["row_number", "column", "category", "severity", "message"]))
     assert summary == {"findings": 0, "errors": 0, "warnings": 0, "affected_rows": 0}
+
+
+
+def test_read_csv_rejects_blank_column_names():
+    with pytest.raises(ValueError, match="column names cannot be blank"):
+        read_csv_bytes(b"id,,answer\n1,extra,yes\n")
+
+
+def test_row_numbers_are_positional_even_with_duplicate_dataframe_index():
+    frame = pd.DataFrame(
+        {"score": ["1", "2", "3", "4", "5", "6", "7", "100"],
+         "note": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", ""]},
+        index=[0, 0, 0, 0, 0, 0, 0, 0],
+    )
+    findings = validate_dataframe(frame, duplicate_rows=False, outlier_checks=True)
+    missing_rows = set(findings.loc[findings["category"] == "missing", "row_number"])
+    outlier_rows = set(findings.loc[findings["category"] == "anomaly", "row_number"])
+    assert missing_rows == {9}
+    assert outlier_rows == {9}
