@@ -25,7 +25,9 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from rapidfuzz import fuzz, process
+
 # PROJECT-SPECIFIC REFERENCE DATA
+
 # Canonical seagrass species list (from the form's own choice list)
 SPECIES_LIST = [
     "Halophila ovalis", "Halophila minor", "Halodule pinifolia",
@@ -54,6 +56,9 @@ GPS_PRECISION_ERROR_M = 30
 # Survey duration sanity (seconds)
 DURATION_TOO_FAST_S = 60
 DURATION_LONG_SESSION_S = 8 * 3600
+
+
+
 # Explicit aliases for the current Tetun-language Kobo export. These map known
 # labels only; unknown headers are preserved and required fields are never guessed.
 BASE_COLUMN_ALIASES = {
@@ -155,6 +160,9 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             "BASE_COLUMN_ALIASES / _canonicalize_form_columns() if the form changed."
         )
     return raw, working
+
+
+
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
     obj_cols = df.select_dtypes(include="object").columns
     for c in obj_cols:
@@ -191,6 +199,9 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
         df[c] = parsed
     df.attrs["numeric_parse_failures"] = parse_failures
     return df
+
+
+
 def _new_issue(idx, uuid, category, field, severity, message):
     return dict(row_index=idx, uuid=uuid, category=category, field=field,
                 severity=severity, message=message)
@@ -413,6 +424,9 @@ def validate(df) -> pd.DataFrame:
     # must work for clean datasets too.
     columns = ["row_index", "uuid", "category", "field", "severity", "message"]
     return pd.DataFrame(all_issues, columns=columns)
+
+
+
 def add_qa_columns(df, issues):
     """
     Add QA flag columns and a Message column to the dataframe.
@@ -420,6 +434,7 @@ def add_qa_columns(df, issues):
     The Message column contains detailed descriptions of all issues for each row.
     """
     df_qa = df.copy()
+    
     qa_columns = [
         'qa_gps_precision_0',
         'qa_missing_coordinates',
@@ -431,6 +446,7 @@ def add_qa_columns(df, issues):
     
     for col in qa_columns:
         df_qa[col] = ''
+    
     df_qa['Message'] = ''
     
     # Store messages for each row
@@ -499,6 +515,9 @@ def add_qa_columns(df, issues):
             df_qa.at[idx, 'Message'] = '; '.join(messages)
     
     return df_qa
+
+
+
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
     values = series.dropna().unique().tolist()
     norm = {v: re.sub(r"\s+", " ", v.replace("_", " ")).strip() for v in values}
@@ -589,6 +608,9 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     correction_log = pd.DataFrame(log_rows)
     return df, correction_log
+
+
+
 def generate_qa_report(df, issues, correction_log, out_path):
     total = len(df)
     # Defensive normalization for callers that pass an empty, untyped DataFrame.
@@ -631,6 +653,9 @@ def generate_qa_report(df, issues, correction_log, out_path):
                       f"{r.severity} | {r.message} |")
 
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
+
+
+
 def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -643,7 +668,10 @@ def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     issues.to_csv(out_dir / "qa_issues.csv", index=False)
     correction_log.to_csv(out_dir / "correction_log.csv", index=False)
     generate_qa_report(clean_df, issues, correction_log, out_dir / "qa_report.md")
+
+
 # ENTRY POINT
+
 def run(input_path: str, out_dir: str = "output"):
     raw_df, df = load_data(input_path)
     df = standardize(df)
