@@ -50,7 +50,7 @@ def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
         tmp.write(data)
         tmp.flush()
-        report = frictionless_validate(tmp.name)
+        report = frictionless_validate(tmp.name, trusted=True)
     try:
         payload = report.to_dict()
     except AttributeError:
