@@ -15,7 +15,8 @@ with st.expander("What this checks"):
     - **Missing values:** blank cells and configurable missing-value tokens.
     - **Duplicates:** exact duplicate rows.
     - **Anomalies:** optional IQR screening for numeric-looking columns.
-    - **Schema stage:** Pandera dataframe validation; this generic mode does not guess survey-specific types or business rules.
+    - **Required columns:** optional, explicit schema contract for the fields your survey needs.
+    - **Schema stage:** generic dataframe checks do not guess survey-specific types or business rules.
 
     These are screening flags, not proof that a record is wrong. Review flagged values before changing source data.
     """)
@@ -24,6 +25,13 @@ uploaded = st.file_uploader("Upload a raw Kobo CSV export", type=["csv"])
 missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null")
 check_duplicates = st.checkbox("Check exact duplicate rows", value=True)
 check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True)
+required_columns_text = st.text_input(
+    "Required columns (comma-separated, optional)",
+    help="Enter exact column names that must exist in this export. Leave blank for generic checks only.",
+)
+required_columns = tuple(dict.fromkeys(
+    name.strip() for name in required_columns_text.split(",") if name.strip()
+))
 
 if uploaded is not None:
     data = uploaded.getvalue()
@@ -39,6 +47,7 @@ if uploaded is not None:
         findings = validate_dataframe(
             frame, missing_tokens=tokens,
             duplicate_rows=check_duplicates, outlier_checks=check_outliers,
+            required_columns=required_columns,
         )
         if structure:
             import pandas as pd
