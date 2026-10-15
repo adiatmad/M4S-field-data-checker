@@ -62,7 +62,7 @@ python -m pytest -q
 
 The generic CSV checker and validation failure handling have regression coverage. GitHub Actions passed dependency installation, Python compilation, and the full test suite for the merged change. Streamlit UI interactions were not separately exercised, so automated checks should not be interpreted as full manual UI or production validation.
 
-See [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), and the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md) for the validation flow, failure boundaries, and bounded development/verification loop.
+See [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md), and the [UI/UX guidelines](docs/UI_UX_GUIDELINES.md) for validation behavior, failure boundaries, and the user-interface design and verification rules.
 
 ## License
 
