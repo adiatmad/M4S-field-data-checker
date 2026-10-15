@@ -2,8 +2,10 @@ import pandas as pd
 import pytest
 
 from kobo_csv_quality import (
+    QualityCheckError,
     findings_summary,
     read_csv_bytes,
+    run_quality_checks,
     structural_issues,
     validate_dataframe,
 )
@@ -58,3 +60,40 @@ def test_row_numbers_are_positional_even_with_duplicate_dataframe_index():
     outlier_rows = set(findings.loc[findings["category"] == "anomaly", "row_number"])
     assert missing_rows == {9}
     assert outlier_rows == {9}
+
+
+
+def test_structural_check_crash_is_reported_and_value_stage_is_not_run(monkeypatch):
+    import kobo_csv_quality as checker
+
+    def fail_structure(*args, **kwargs):
+        raise RuntimeError("internal details must not be shown to users")
+
+    def unexpected_value_check(*args, **kwargs):
+        pytest.fail("value checks must not run after structural validation fails")
+
+    monkeypatch.setattr(checker, "structural_issues", fail_structure)
+    monkeypatch.setattr(checker, "validate_dataframe", unexpected_value_check)
+
+    with pytest.raises(QualityCheckError, match="structural validation") as exc:
+        run_quality_checks(b"id\\n1\\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
+
+    assert exc.value.stage == "structural validation"
+    assert "internal details" not in str(exc.value)
+
+
+def test_value_check_crash_is_reported_without_returning_partial_findings(monkeypatch):
+    import kobo_csv_quality as checker
+
+    monkeypatch.setattr(checker, "structural_issues", lambda *args, **kwargs: [])
+
+    def fail_values(*args, **kwargs):
+        raise RuntimeError("internal details must not be shown to users")
+
+    monkeypatch.setattr(checker, "validate_dataframe", fail_values)
+
+    with pytest.raises(QualityCheckError, match="value validation") as exc:
+        run_quality_checks(b"id\\n1\\n", "survey.csv", pd.DataFrame({"id": ["1"]}))
+
+    assert exc.value.stage == "value validation"
+    assert "internal details" not in str(exc.value)
