@@ -100,7 +100,7 @@ def test_value_check_crash_is_reported_without_returning_partial_findings(monkey
 
 
 def test_run_quality_checks_applies_optional_contract():
-    data = b"record_id,consent\\n001,yes\\n002,maybe\\n"
+    data = b"record_id,consent\n001,yes\n002,maybe\n"
     frame = read_csv_bytes(data)
     findings = run_quality_checks(
         data, "survey.csv", frame,
