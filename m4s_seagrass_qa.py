@@ -148,10 +148,14 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read a raw Kobo export and return (untouched raw data, canonical working copy)."""
     raw = pd.read_excel(path)
     working = _canonicalize_form_columns(raw)
+    # Required schema follows fields the M4S pipeline actually validates.
+    # Fail early rather than silently skipping mandatory-field or photo checks.
     required = [
         "start", "end", "Collector Name", "Date and time",
         "Administration Post", "Village", "_Local GPS_latitude",
         "_Local GPS_longitude", "_Local GPS_precision", "_uuid",
+        "Transect Number", "Quadrat Number", "Presence of Seagrass",
+        "Quadrat Photo_URL",
     ]
     missing = [c for c in required if c not in working.columns]
     if missing:
