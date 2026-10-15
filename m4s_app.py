@@ -264,8 +264,12 @@ def validate_gps(df):
                                           f"GPS precision {prec:.1f}m — below recommended accuracy"))
         dist = _haversine_m(*SITE_CENTROID, lat, lon)
         if dist > SITE_RADIUS_M:
-            issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
-                                      f"{dist:.0f}m from survey site centroid — outside project boundary"))
+            issues.append(_new_issue(
+                i, uid, "gps", "_Local GPS", "warning",
+                f"{dist:.0f}m from configured site centroid; exceeds the {SITE_RADIUS_M}m "
+                "centroid-distance threshold. Verify coordinates, CRS, and site assignment; "
+                "this check does not test polygon containment."
+            ))
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
@@ -503,16 +507,11 @@ def add_qa_columns(df, issues):
                 elif 'Missing GPS coordinates' in message:
                     df_qa.at[row_idx, 'qa_missing_coordinates'] = 'Yes'
                     row_messages[row_idx].append("Missing GPS coordinates - both latitude and longitude are blank.")
-                elif 'outside project boundary' in message:
-                    df_qa.at[row_idx, 'qa_outside_boundary'] = 'Yes'
-                    # Extract distance if available
-                    import re
-                    dist_match = re.search(r"(\d+)m from", message)
-                    if dist_match:
-                        dist = dist_match.group(1)
-                        row_messages[row_idx].append(f"GPS point is {dist}m from site centroid - outside the {SITE_RADIUS_M}m project boundary.")
-                    else:
-                        row_messages[row_idx].append(f"GPS point outside project boundary: {message}")
+                elif 'centroid-distance threshold' in message:
+                    # Retain the legacy flag column for downstream compatibility, but
+                    # explain that this is a centroid-distance alert, not polygon testing.
+                    df_qa.at[row_idx, 'qa_outside_boundary'] = 'Review'
+                    row_messages[row_idx].append(message)
                     
             elif category == 'duplicate' and field == '_uuid':
                 df_qa.at[row_idx, 'qa_duplicate_uuid'] = 'Yes'
