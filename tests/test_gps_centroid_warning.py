@@ -1,6 +1,6 @@
 import pandas as pd
 
-from m4s_seagrass_qa import SITE_CENTROID, validate_gps, add_qa_columns, _haversine_m
+from m4s_seagrass_qa import SITE_CENTROID, validate_gps, add_qa_columns
 
 
 def _gps_frame(lat, lon, precision=5):
