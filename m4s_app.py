@@ -18,23 +18,7 @@ from rapidfuzz import fuzz, process
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
 
-# """
-# M4S Field Data QA Checker
-# =========================
-# Turns a raw KoboToolbox export into an analysis-ready dataset with QA flags.
-# 
-# Pipeline stages:
-#     1. load_data          -> read the raw .xlsx, keep an untouched copy
-#     2. standardize         -> parse dates, trim whitespace, fix dtypes
-#     3. validate             -> run every QA rule, collect issues
-#     4. add_qa_columns      -> add QA flag columns + Message column to raw data
-#     5. correct               -> apply ONLY the safe, reversible corrections
-#     6. generate_qa_report -> one Markdown report summarizing everything
-#     7. export_outputs      -> write clean dataset + correction log + raw copy with QA flags
-# 
-# Run directly:  python3 m4s_seagrass_qa.py raw_export.xlsx
-# Outputs land in ./output/
-# """
+# M4S Streamlit entry point; see README.md for user instructions.
 
 import re
 import unicodedata
@@ -677,11 +661,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
 
 # Generic CSV contract validation and reusable checks are embedded below.
 
-# """Explicit, user-authored contracts for generic CSV quality checks.
-# 
-# The contract is deliberately declarative: it validates only rules supplied by the
-# survey owner and never infers ecological or survey semantics.
-# """
+
 
 import pandas as pd
 import numpy as np
