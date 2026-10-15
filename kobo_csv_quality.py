@@ -83,9 +83,20 @@ def validate_dataframe(
     missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
     duplicate_rows: bool = True,
     outlier_checks: bool = True,
+    required_columns: tuple[str, ...] = (),
 ) -> pd.DataFrame:
-    """Apply generic checks; row_number is the 1-based CSV data row (header excluded)."""
+    """Apply generic checks; row_number is the 1-based CSV data row (header excluded).
+
+    required_columns is an optional caller-defined contract. The generic checker
+    never assumes that fields from one survey apply to another.
+    """
     issues: list[dict] = []
+    present_columns = set(map(str, df.columns))
+    for column in dict.fromkeys(name.strip() for name in required_columns if name.strip()):
+        if column not in present_columns:
+            issues.append(_issue("", column, "schema", "error",
+                                 "Required column is missing from the CSV."))
+
     normalized_missing = {token.casefold() for token in missing_tokens}
     for column in df.columns:
         values = df[column].astype("string")
