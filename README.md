@@ -1,69 +1,110 @@
 # M4S Field Data QA Checker
 
-A Streamlit application and command-line pipeline for quality assurance of M4S seagrass field data exported from KoboToolbox, with an additional generic CSV quality checker for other survey exports.
+**Found mistakes in your KoboToolbox survey data before you use it in a report, map, or analysis.**
 
-## Choose your workflow
+This tool checks downloaded survey files and highlights things worth reviewing, such as missing answers, duplicate records, unusual values, and problems with GPS coordinates. You do not need to be a programmer to use the Streamlit app, but you will need to install it or open a version hosted by your team.
 
-### Generic raw Kobo CSV checker
+It has two workflows. Choose the one that matches the file you downloaded.
 
-Use this when you have a CSV export and want general quality flags without assuming a particular survey form.
+## Start here: Which file do you have?
 
-- `kobo_csv_quality_app.py` — Streamlit interface for CSV uploads, structure checks, missing values, exact duplicates, and optional numeric outlier screening.
-- `kobo_csv_quality.py` — reusable validation functions powered by Frictionless and Pandera.
+### I have a CSV file from KoboToolbox
 
-Run locally:
+Choose **Generic Kobo CSV checker** if you want general checks for a survey export.
+
+It can help you:
+- find blank or missing values;
+- identify rows that look exactly alike;
+- check whether the file's columns and values have basic structural problems;
+- flag unusual numeric values for you to review; and
+- download a list of findings to investigate.
+
+It does **not** know what every question in your survey means. For example, it cannot reliably decide whether a species observation is ecologically possible unless the appropriate survey rules have been supplied.
+
+### I have an Excel (.xlsx) export for the M4S seagrass survey
+
+Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, required answers, timestamps, photos, duplicates, and coverage mismatches.
+
+These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
+
+## What happens to my data?
+
+1. **You upload your export.** The tool reads the file you selected.
+2. **It checks for possible problems.** Findings explain what needs attention and, where available, identify the row and column.
+3. **You review the findings.** A warning is a reason to investigate, not proof that a record is wrong.
+4. **You download the results.** Depending on the workflow, you can download a findings list or QA outputs for further review.
+
+The generic CSV checker keeps CSV values as text during checks, so an identifier like `0012` is not silently changed to `12`. It does not automatically correct your original CSV. The M4S-specific command-line workflow can make a limited set of documented corrections; it also keeps a raw copy and correction log in its output.
+
+**Important:** A result with no findings means only that the checks you ran did not report a problem. It does not prove that every answer is correct.
+
+## How to run the app
+
+If your team already provides a hosted version, follow their instructions and check how your data is handled before uploading it. Otherwise, you can run the app on your own computer.
+
+You will need Python installed.
+
+1. Download or clone this repository.
+2. Open a terminal in the project folder.
+3. Create and activate a Python environment, then install the required packages.
+4. Start the app with the command below.
 
 ```bash
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
-# macOS/Linux: source .venv/bin/activate
+# Windows:
+.venv/Scripts/Activate.ps1
+# macOS/Linux:
+source .venv/bin/activate
+
 python -m pip install -r requirements.txt
+streamlit run m4s_app.py
+```
+
+The app opens in your browser. Choose the workflow that matches your file and follow the on-screen instructions.
+
+For the standalone generic CSV checker, you can also run:
+
+```bash
 streamlit run kobo_csv_quality_app.py
 ```
 
-The app reports findings with category, severity, row reference, column, and message, and lets you download findings as CSV. It preserves CSV values as strings so identifiers such as `0012` are not silently converted to `12`.
+## Optional: Run the M4S checks from the command line
 
-**Failure handling:** structural and value validation run through a shared orchestration function. If either stage raises an unexpected error, the app displays a safe failure message and stops the run rather than presenting partial findings as a completed validation. Internal exception details are not exposed in the UI.
-
-### M4S seagrass XLSX workflow
-
-- `m4s_app.py` — single-file Streamlit entry point with two selectable workflows: M4S seagrass XLSX QA and generic Kobo CSV quality checks. The M4S pipeline, generic CSV checks, and optional JSON-contract validation are embedded in this file so the deployed app does not import other project modules at runtime.
-- `m4s_seagrass_qa.py` — separate command-line M4S QA pipeline, retained for local/batch use.
-- `kobo_csv_quality_app.py`, `kobo_csv_quality.py`, and `csv_contract.py` — original generic-checker implementation retained for modular use and automated tests.
+This is for users who are comfortable using a terminal or need to process a file in a repeatable batch workflow:
 
 ```bash
-python -m pip install -r requirements.txt
-streamlit run m4s_app.py
-# Optional standalone command-line workflow:
-python3 m4s_seagrass_qa.py <raw_kobo_export.xlsx> [output_dir]
+python3 m4s_seagrass_qa.py raw_export.xlsx
 ```
 
-The M4S-specific pipeline checks GPS, seagrass species logic, percentage fields, mandatory fields, timestamps, photos, duplicates, and coverage mismatches. Its domain assumptions (including site coordinates and expected columns) are specific to that project; review them before applying to another survey.
+By default, the results are written to an `output/` folder. You can choose another output folder as the second argument.
 
-## Privacy
+## Important limits
 
-Both Streamlit apps process uploaded data in the server process that runs them. Do not assume hosted uploads remain only on your device. For sensitive field data, run the app locally or verify hosting access controls, retention, and data-protection arrangements before use. Do not commit real survey exports, credentials, or personally identifiable information.
+- **This tool supports review; it does not replace your survey form or field protocol.** For complete checks of required answers, skip logic, choices, and repeat groups, the matching KoboToolbox XLSForm or another authoritative schema may be needed.
+- **Do not accept a flag blindly.** Check the original record and the survey context before deciding what to change.
+- **Unusual values are not automatically errors.** An outlier may be a genuine observation.
+- **Survey-specific rules need evidence.** Ecological thresholds and species rules should match the approved M4S protocol. The species-sum rule is currently disabled pending confirmation against the field protocol.
+- **Protect field data.** The apps process uploaded files on the server where they run. Running locally keeps processing on your computer; before using a hosted version, confirm its access controls, retention, and data-protection arrangements. Never commit real survey exports, credentials, or personal information to this repository.
 
-## Limitations
+## For developers and advanced users
 
-Generic checks are screening aids, not a replacement for the survey's XLSForm. The optional JSON contract validates only rules explicitly supplied by the user; it does not implement XLSForm skip logic, conditional requirements, or repeat groups. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker. A clean result means only that the enabled checks emitted no findings; it does not certify the entire survey as valid.
+- `m4s_app.py` — main Streamlit app with both workflows.
+- `kobo_csv_quality_app.py` and `kobo_csv_quality.py` — standalone generic CSV checker and its reusable validation functions.
+- `csv_contract.py` — optional checks based on rules explicitly provided in a JSON contract. It does not infer survey meaning or implement all XLSForm logic.
+- `m4s_seagrass_qa.py` — standalone M4S-specific command-line QA workflow.
 
-## Repository benchmark
-
-A focused comparison of related biodiversity, Kobo, and data-validation projects—and the implementation decisions they informed—is documented in [`docs/REPOSITORY_BENCHMARK.md`](docs/REPOSITORY_BENCHMARK.md). The M4S pipeline now fails on missing required survey columns, flags whitespace-only mandatory values and invalid numeric strings, and handles clean runs with zero findings. The epicover/species-sum rule is disabled pending confirmation against the field protocol.
+Read [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md), and the [UI/UX guidelines](docs/UI_UX_GUIDELINES.md) for implementation details and validation behavior.
 
 ## Tests
 
-Run the automated test suite from the repository root:
+Run the automated tests from the repository root:
 
 ```bash
 python -m pytest -q
 ```
 
-The generic CSV checker and validation failure handling have regression coverage. GitHub Actions passed dependency installation, Python compilation, and the full test suite for the merged change. Streamlit UI interactions were not separately exercised, so automated checks should not be interpreted as full manual UI or production validation.
-
-See [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md), and the [UI/UX guidelines](docs/UI_UX_GUIDELINES.md) for validation behavior, failure boundaries, and the user-interface design and verification rules.
+The test suite covers the generic CSV checker and validation failure handling. Automated tests do not replace a manual walkthrough of the Streamlit interface or validation against a real, approved survey export.
 
 ## License
 
-See [LICENSE](LICENSE). The existing repository license is AGPL-3.0.
+See [LICENSE](LICENSE). The repository is licensed under AGPL-3.0.
