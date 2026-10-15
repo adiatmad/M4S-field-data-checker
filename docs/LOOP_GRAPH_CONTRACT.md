@@ -80,7 +80,7 @@ Do not add token telemetry, external data transmission, dynamic graph generation
 
 The generic checker now routes both validation stages through `run_quality_checks`. Unexpected exceptions are wrapped in `QualityCheckError` with a stage label, without exposing the original exception text to the UI. The Streamlit app displays a safe error and stops the run; it does not summarize or export partial findings as if the checks completed.
 
-Regression tests cover failures in structural and value validation, including the requirement that value checks do not run after structural validation fails. The tests still need to be executed in a configured Python environment before this change can be considered verified.
+Regression tests cover failures in structural and value validation, including the requirement that value checks do not run after structural validation fails. GitHub Actions verification passed for the implementation commit: dependency installation, `compileall`, and `pytest -q` all completed successfully. UI interaction paths were not separately exercised, so this is test-suite evidence rather than a claim of full production validation.
 
 ## 5. References
 
