@@ -7,7 +7,7 @@ from kobo_csv_quality import findings_summary, read_csv_bytes, structural_issues
 
 st.set_page_config(page_title="Kobo CSV Quality Checker", page_icon="🧭", layout="wide")
 st.title("🧭 Kobo CSV Quality Checker")
-st.caption("Generic, local-first checks for raw KoboToolbox CSV exports. No data is uploaded to a third-party service by this app.")
+st.caption("Run locally to keep survey files on your machine. If hosted, uploads are processed by that server; review its data-protection setup before use.")
 
 with st.expander("What this checks"):
     st.markdown("""
@@ -67,7 +67,7 @@ if uploaded is not None:
         )
 
     with st.expander("Preview input (first 100 rows)"):
-        st.dataframe(frame.head(100), use_container_width=True)
+        st.dataframe(frame.head(100), use_container_width=True, hide_index=True)
 
     st.download_button(
         "Download unchanged input CSV",
