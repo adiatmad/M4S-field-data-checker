@@ -76,9 +76,11 @@ A code change follows this bounded loop:
 
 Do not add token telemetry, external data transmission, dynamic graph generation, automatic retries, or multi-agent coordination without a separate requirement and threat/operational review.
 
-## 4. Known implementation gap to verify
+## 4. Failure boundary (implemented)
 
-The current Streamlit app catches parse errors, but the structural validator call is not wrapped in an explicit user-facing failure boundary. A runtime exception from that stage can interrupt the app rather than produce the check_failed outcome described above. Address this with a targeted change and regression test before claiming that all graph failure paths are handled.
+The generic checker now routes both validation stages through `run_quality_checks`. Unexpected exceptions are wrapped in `QualityCheckError` with a stage label, without exposing the original exception text to the UI. The Streamlit app displays a safe error and stops the run; it does not summarize or export partial findings as if the checks completed.
+
+Regression tests cover failures in structural and value validation, including the requirement that value checks do not run after structural validation fails. The tests still need to be executed in a configured Python environment before this change can be considered verified.
 
 ## 5. References
 
