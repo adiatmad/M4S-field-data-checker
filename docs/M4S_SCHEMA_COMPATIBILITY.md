@@ -9,7 +9,7 @@ The M4S QA pipeline originally required English column labels, but the current M
 - Normalize the known Tetun yes/no values (`Sim`/`Lae`) only in the canonical seagrass-presence field.
 - Preserve unknown headers and values.
 - Never infer a required field from similarity or silently combine two source columns into one canonical field.
-- If required fields remain absent after known aliases are applied, stop with a useful error listing missing canonical fields and available headers.
+- If required fields remain absent after known aliases are applied, stop with a useful error listing missing canonical fields and available headers. The required contract includes core metadata/GPS/UUID fields plus transect number, quadrat number, seagrass presence, and quadrat photo URL because the M4S validators depend on them.
 
 ## Supported aliases
 Core metadata: `Naran Koletor`, `Data no Horas`, `Postu Administrativu`, `Suku`, `_GPS Lokal_latitude/longitude/altitude/precision`, `Numeru Tranjektu`, `Numeru Quadrante`.
