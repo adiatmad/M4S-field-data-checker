@@ -862,6 +862,7 @@ def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
     return issues
 
 
+
 class QualityCheckError(RuntimeError):
     """A validation stage failed; no partial result should be presented as complete."""
 
