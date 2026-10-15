@@ -1114,21 +1114,57 @@ else:
         st.info("Upload an XLSX file to run the QA pipeline.")
         st.stop()
     
-    # ---- run the pipeline ----
+    # Run each stage separately so failures stop the workflow without exposing a traceback.
     with st.spinner("Running QA pipeline..."):
         try:
             raw_df, df = load_data(uploaded)
-        except ValueError as e:
-            st.error(f"Could not load the uploaded XLSX file: {str(e)}")
+        except ValueError as exc:
+            st.error(f"Could not load the uploaded XLSX file: {exc}")
             st.stop()
-    
-        df = standardize(df)
-        issues = validate(df)
-        
-        # Add QA columns to the raw data
-        raw_with_qa = add_qa_columns(raw_df, issues)
-        
-        clean_df, correction_log = correct(df)
+        except Exception:
+            st.error(
+                "The uploaded XLSX file could not be loaded. Check that it is a valid Kobo export, "
+                "then retry. If the problem persists, report the load stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            df = standardize(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete during data standardization. No results are available. "
+                "Check that the export matches the expected survey schema, then retry. "
+                "If the problem persists, report the standardization stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            issues = validate(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete during validation. No results are available. Retry the workflow. "
+                "If the problem persists, report the validation stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            raw_with_qa = add_qa_columns(raw_df, issues)
+        except Exception:
+            st.error(
+                "M4S QA could not prepare row-level QA flags. No results are available. Retry the workflow. "
+                "If the problem persists, report the QA-flag stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            clean_df, correction_log = correct(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete the correction stage. No results are available. "
+                "The uploaded source file is not changed. Retry the workflow; if the problem persists, "
+                "report the correction stage without sharing survey data."
+            )
+            st.stop()
     
     # ---- summary metrics ----
     total = len(clean_df)
