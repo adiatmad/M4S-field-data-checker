@@ -47,10 +47,10 @@ def _issue(row_number: Any, column: Any, category: str, severity: str, message: 
 def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
     """Run Frictionless' CSV/resource checks and normalize its errors for display."""
     suffix = Path(filename).suffix or ".csv"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=suffix, dir=Path.cwd(), delete=True) as tmp:
         tmp.write(data)
         tmp.flush()
-        report = frictionless_validate(tmp.name, trusted=True)
+        report = frictionless_validate(tmp.name)
     try:
         payload = report.to_dict()
     except AttributeError:
