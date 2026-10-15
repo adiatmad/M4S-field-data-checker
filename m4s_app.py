@@ -1,16 +1,20 @@
-"""
-M4S Field Data QA Checker — Streamlit front end
-================================================
-Enhanced version with QA columns for easy filtering of issues.
-"""
-
 import io
+import json
+import csv
 import pandas as pd
 import streamlit as st
 from datetime import datetime
 import tempfile
 import pathlib
 import uuid
+from io import BytesIO
+from pathlib import Path
+from typing import Any
+import numpy as np
+import pandera.pandas as pa
+from frictionless import validate as frictionless_validate
+from rapidfuzz import fuzz, process
+
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
 
@@ -696,229 +700,633 @@ def generate_qa_report(df, issues, correction_log, out_path):
 
 # ----------------------------------------------------------------------
 
+# Generic CSV contract validation and reusable checks are embedded below.
 
-st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
-st.title("🌿 M4S Field Data QA Checker")
-st.caption("Upload the raw Kobo export (.xlsx). The file is processed by the server running this app. Use a local deployment for sensitive field data unless the host's access controls and data-protection arrangements have been reviewed.")
+"""Explicit, user-authored contracts for generic CSV quality checks.
 
-uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
+The contract is deliberately declarative: it validates only rules supplied by the
+survey owner and never infers ecological or survey semantics.
+"""
 
-if uploaded is None:
-    st.info("📤 Upload a file to run the pipeline.")
-    st.stop()
+import pandas as pd
+import numpy as np
 
-# ---- run the pipeline ----
-with st.spinner("Running QA pipeline..."):
-    try:
-        raw_df, df = load_data(uploaded)
-    except ValueError as e:
-        st.error(f"❌ Error loading data: {str(e)}")
-        st.stop()
+ISSUE_COLUMNS = ["row_number", "column", "category", "severity", "message"]
 
-    df = standardize(df)
-    issues = validate(df)
-    
-    # Add QA columns to the raw data
-    raw_with_qa = add_qa_columns(raw_df, issues)
-    
-    clean_df, correction_log = correct(df)
 
-# ---- summary metrics ----
-total = len(clean_df)
-flagged = issues.row_index.nunique() if len(issues) else 0
-errors = (issues.severity == "error").sum() if len(issues) else 0
-warnings = (issues.severity == "warning").sum() if len(issues) else 0
+def _issue(row, column, message):
+    return {"row_number": row, "column": column, "category": "contract",
+            "severity": "error", "message": message}
 
-st.divider()
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("📊 Total records", total)
-col2.metric("✅ Clean records", total - flagged)
-col3.metric("❌ Errors", int(errors), help="Must be fixed before analysis")
-col4.metric("⚠️ Warnings", int(warnings), help="Review and decide if action needed")
-col5.metric("🔧 Corrections applied", len(correction_log))
 
-st.divider()
+def validate_contract(df: pd.DataFrame, contract: dict) -> pd.DataFrame:
+    """Validate required columns, allowed values, simple types/ranges and unique keys.
 
-# ---- QA COLUMNS OVERVIEW ----
-st.subheader("🔍 QA Columns — Quick Issue Identification")
-st.markdown("""
-The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
-The Message column provides detailed descriptions of all issues for each row.
-**Filter by any column to find rows that need fixing!**
-""")
-
-# Show QA columns summary
-qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates', 
-           'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
-           'qa_coverage_mismatch']
-
-qa_summary = {}
-for col in qa_cols:
-    if col in raw_with_qa.columns:
-        if col == 'qa_coverage_mismatch':
-            count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
-        else:
-            count = (raw_with_qa[col] == 'Yes').sum()
-        qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
-
-if sum(qa_summary.values()) > 0:
-    cols = st.columns(len(qa_summary))
-    for i, (name, count) in enumerate(qa_summary.items()):
-        if count > 0:
-            cols[i].metric(f"⚠️ {name}", count, delta=None)
-        else:
-            cols[i].metric(f"✅ {name}", 0, delta=None)
-else:
-    st.success("🎉 No QA flags triggered! All data looks clean.")
-
-st.divider()
-
-# ---- FILTERABLE DATA VIEW ----
-st.subheader("📊 Filter Raw Data by QA Flags")
-
-# Show the raw data with QA columns
-display_df = raw_with_qa.copy()
-
-# Add filter options
-filter_cols = st.columns(4)
-with filter_cols[0]:
-    show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
-with filter_cols[1]:
-    if show_only_with_issues:
-        qa_cols_for_filter = st.multiselect(
-            "Filter by QA Flag",
-            options=qa_cols,
-            default=qa_cols
-        )
-with filter_cols[2]:
-    if not show_only_with_issues:
-        search = st.text_input("Search in data", placeholder="Search any column...")
-with filter_cols[3]:
-    show_message_only = st.checkbox("Show only rows with Message", value=False)
-
-# Apply filters
-if show_only_with_issues:
-    # Show only rows with any QA flag
-    mask = pd.Series(False, index=display_df.index)
-    for col in qa_cols_for_filter:
-        if col in display_df.columns:
-            if col == 'qa_coverage_mismatch':
-                mask = mask | display_df[col].str.startswith('Yes', na=False)
-            else:
-                mask = mask | (display_df[col] == 'Yes')
-    display_df = display_df[mask]
-elif show_message_only:
-    display_df = display_df[display_df['Message'] != '']
-elif search:
-    # Simple search across all columns
-    mask = pd.Series(False, index=display_df.index)
-    for col in display_df.select_dtypes(include=['object', 'string']).columns:
-        mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
-    display_df = display_df[mask]
-
-# Show count
-st.caption(f"Showing {len(display_df)} rows")
-
-# Display the data - highlight QA columns and Message
-st.dataframe(
-    display_df,
-    width='stretch',
-    column_config={
-        col: st.column_config.Column(
-            col,
-            help=f"QA flag: 'Yes' indicates this row has the issue",
-            width='small'
-        ) for col in qa_cols if col in display_df.columns
+    Example contract:
+    {
+      "required_columns": ["record_id"],
+      "key_columns": ["record_id"],
+      "columns": {
+        "age": {"type": "integer", "min": 0, "max": 120},
+        "consent": {"allowed_values": ["yes", "no"]},
+        "visit_date": {"type": "date"}
+      }
     }
-)
+    """
+    if not isinstance(contract, dict):
+        raise ValueError("Contract must be a JSON object.")
+    unknown = set(contract) - {"required_columns", "key_columns", "columns"}
+    if unknown:
+        raise ValueError(f"Unsupported contract keys: {sorted(unknown)}")
 
-# ---- DOWNLOAD BUTTONS ----
-st.divider()
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.download_button(
-        "📥 Download Raw Data with QA Flags & Messages",
-        raw_with_qa.to_csv(index=False),
-        file_name="raw_with_qa_flags.csv"
+    def names(key):
+        value = contract.get(key, [])
+        if not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value):
+            raise ValueError(f"'{key}' must be a list of non-empty column names.")
+        if len(value) != len(set(value)):
+            raise ValueError(f"'{key}' cannot contain duplicate column names.")
+        return value
+
+    required = names("required_columns")
+    keys = names("key_columns")
+    rules_by_column = contract.get("columns", {})
+    if not isinstance(rules_by_column, dict):
+        raise ValueError("'columns' must be an object keyed by column name.")
+
+    issues = []
+    for column in required:
+        if column not in df.columns:
+            issues.append(_issue("", column, "Required column is missing."))
+
+    missing_keys = [column for column in keys if column not in df.columns]
+    for column in missing_keys:
+        issues.append(_issue("", column, "Key column is missing; uniqueness cannot be checked."))
+
+    for column, rules in rules_by_column.items():
+        if not isinstance(column, str) or not column.strip() or not isinstance(rules, dict):
+            raise ValueError("Each 'columns' entry must map a non-empty name to a rule object.")
+        unknown_rules = set(rules) - {"type", "allowed_values", "min", "max"}
+        if unknown_rules:
+            raise ValueError(f"Unsupported rules for '{column}': {sorted(unknown_rules)}")
+        kind = rules.get("type")
+        if kind not in (None, "string", "number", "integer", "date", "boolean"):
+            raise ValueError(f"Unsupported type for '{column}': {kind}")
+        allowed = rules.get("allowed_values")
+        if allowed is not None and (not isinstance(allowed, list) or not allowed):
+            raise ValueError(f"'allowed_values' for '{column}' must be a non-empty list.")
+        for bound in ("min", "max"):
+            if bound in rules and (isinstance(rules[bound], bool) or not isinstance(rules[bound], (int, float))):
+                raise ValueError(f"'{bound}' for '{column}' must be numeric.")
+        if "min" in rules and "max" in rules and rules["min"] > rules["max"]:
+            raise ValueError(f"'min' cannot exceed 'max' for '{column}'.")
+        if ({"min", "max"} & set(rules)) and kind not in ("number", "integer"):
+            raise ValueError(f"Numeric bounds for '{column}' require type 'number' or 'integer'.")
+        if column not in df.columns:
+            continue
+
+        values = df[column].astype("string")
+        present = values.notna() & values.str.strip().ne("")
+        if allowed is not None:
+            allowed_strings = {str(v) for v in allowed}
+            invalid = present & ~values.isin(allowed_strings)
+            for pos in np.flatnonzero(invalid.to_numpy()):
+                issues.append(_issue(pos + 2, column,
+                    f"Value {values.iloc[pos]!r} is not in the allowed-value list."))
+
+        parsed = None
+        if kind in ("number", "integer"):
+            parsed = pd.to_numeric(values.where(present), errors="coerce")
+            invalid = present & parsed.isna()
+            if kind == "integer":
+                invalid |= present & parsed.notna() & (parsed % 1 != 0)
+            for pos in np.flatnonzero(invalid.to_numpy()):
+                issues.append(_issue(pos + 2, column,
+                    f"Value {values.iloc[pos]!r} is not a valid {kind}."))
+            if "min" in rules or "max" in rules:
+                outside = pd.Series(False, index=parsed.index)
+                if "min" in rules:
+                    outside |= parsed < rules["min"]
+                if "max" in rules:
+                    outside |= parsed > rules["max"]
+                outside &= parsed.notna()
+                for pos in np.flatnonzero(outside.to_numpy()):
+                    issues.append(_issue(pos + 2, column,
+                        f"Numeric value {parsed.iloc[pos]:g} is outside the configured range."))
+        elif kind == "date":
+            parsed = pd.to_datetime(values.where(present), errors="coerce")
+            invalid = present & parsed.isna()
+            for pos in np.flatnonzero(invalid.to_numpy()):
+                issues.append(_issue(pos + 2, column,
+                    f"Value {values.iloc[pos]!r} is not a valid date."))
+        elif kind == "boolean":
+            invalid = present & ~values.str.casefold().isin({"true", "false", "0", "1", "yes", "no"})
+            for pos in np.flatnonzero(invalid.to_numpy()):
+                issues.append(_issue(pos + 2, column,
+                    f"Value {values.iloc[pos]!r} is not a recognized boolean."))
+
+    if keys and not missing_keys:
+        key_values = df[keys].astype("string").apply(lambda col: col.str.strip())
+        complete = key_values.notna().all(axis=1) & key_values.ne("").all(axis=1)
+        duplicates = key_values.duplicated(keep=False) & complete
+        for pos in np.flatnonzero(duplicates.to_numpy()):
+            issues.append(_issue(pos + 2, ", ".join(keys),
+                "Key value duplicates another record; verify before changing either row."))
+
+    return pd.DataFrame(issues, columns=ISSUE_COLUMNS)
+
+"""Local-first, generic CSV quality checks for KoboToolbox exports."""
+
+import csv
+from io import BytesIO
+from pathlib import Path
+import tempfile
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import pandera.pandas as pa
+from frictionless import validate as frictionless_validate
+
+
+ISSUE_COLUMNS = ["row_number", "column", "category", "severity", "message"]
+
+
+def read_csv_bytes(data: bytes, *, encoding: str = "utf-8-sig") -> pd.DataFrame:
+    """Read CSV bytes without silently converting identifier strings to numbers."""
+    if not data:
+        raise ValueError("The uploaded CSV is empty.")
+    try:
+        text = data.decode(encoding)
+        header = next(csv.reader(text.splitlines()), [])
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Could not decode this CSV as {encoding}: {exc}") from exc
+    if not header or not any(name.strip() for name in header):
+        raise ValueError("The CSV has no columns.")
+    if any(not name.strip() for name in header):
+        raise ValueError("CSV column names cannot be blank.")
+    if len(set(header)) != len(header):
+        duplicates = sorted({name for name in header if header.count(name) > 1})
+        raise ValueError(f"Duplicate column names: {duplicates}")
+    try:
+        frame = pd.read_csv(BytesIO(data), encoding=encoding, dtype="string", keep_default_na=False)
+    except (UnicodeDecodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise ValueError(f"Could not parse this CSV: {exc}") from exc
+    if len(frame.columns) == 0:
+        raise ValueError("The CSV has no columns.")
+    return frame
+
+
+def _issue(row_number: Any, column: Any, category: str, severity: str, message: str) -> dict:
+    return {"row_number": row_number, "column": column, "category": category,
+            "severity": severity, "message": message}
+
+
+def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
+    """Run Frictionless' CSV/resource checks and normalize its errors for display."""
+    suffix = Path(filename).suffix or ".csv"
+    with tempfile.NamedTemporaryFile(suffix=suffix, dir=Path.cwd(), delete=True) as tmp:
+        tmp.write(data)
+        tmp.flush()
+        # Frictionless treats absolute local paths as unsafe by default; pass a cwd-relative path.
+        report = frictionless_validate(Path(tmp.name).relative_to(Path.cwd()).as_posix())
+    try:
+        payload = report.to_dict()
+    except AttributeError:
+        payload = dict(report)
+    issues = []
+    for task in payload.get("tasks", []):
+        for error in task.get("errors", []):
+            issues.append(_issue(
+                error.get("rowNumber", error.get("row_number", "")),
+                error.get("fieldName", error.get("field_name", "")),
+                "structure", "error",
+                str(error.get("message") or error.get("type") or "CSV structure error"),
+            ))
+    for error in payload.get("errors", []):
+        issues.append(_issue(
+            error.get("rowNumber", error.get("row_number", "")),
+            error.get("fieldName", error.get("field_name", "")),
+            "structure", "error",
+            str(error.get("message") or error.get("type") or "CSV structure error"),
+        ))
+    return issues
+
+
+
+class QualityCheckError(RuntimeError):
+    """A validation stage failed; no partial result should be presented as complete."""
+
+    def __init__(self, stage: str):
+        self.stage = stage
+        super().__init__(f"Quality checks failed during {stage}.")
+
+
+def run_quality_checks(
+    data: bytes,
+    filename: str,
+    df: pd.DataFrame,
+    *,
+    missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
+    duplicate_rows: bool = True,
+    outlier_checks: bool = True,
+    contract: dict | None = None,
+) -> pd.DataFrame:
+    """Run all enabled stages or raise a stage-labelled error; never return partial findings."""
+    try:
+        structure = structural_issues(data, filename)
+    except Exception as exc:
+        raise QualityCheckError("structural validation") from exc
+
+    try:
+        values = validate_dataframe(
+            df,
+            missing_tokens=missing_tokens,
+            duplicate_rows=duplicate_rows,
+            outlier_checks=outlier_checks,
+        )
+        if contract is not None:
+            contract_findings = validate_contract(df, contract)
+            values = pd.concat([values, contract_findings], ignore_index=True)[ISSUE_COLUMNS]
+    except Exception as exc:
+        raise QualityCheckError("value validation") from exc
+
+    if not structure:
+        return values
+
+    structural_frame = pd.DataFrame(structure, columns=ISSUE_COLUMNS)
+    return pd.concat([structural_frame, values], ignore_index=True)[ISSUE_COLUMNS]
+
+
+def validate_dataframe(
+    df: pd.DataFrame,
+    *,
+    missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
+    duplicate_rows: bool = True,
+    outlier_checks: bool = True,
+) -> pd.DataFrame:
+    """Apply generic checks; row_number is the 1-based CSV data row (header excluded)."""
+    issues: list[dict] = []
+    normalized_missing = {token.casefold() for token in missing_tokens}
+    for column in df.columns:
+        values = df[column].astype("string")
+        missing = values.str.strip().str.casefold().isin(normalized_missing)
+        for position, is_missing in enumerate(missing.tolist(), start=2):
+            if is_missing:
+                issues.append(_issue(position, column, "missing", "warning",
+                                     "Value is blank or matches a configured missing-value token."))
+
+    if duplicate_rows and not df.empty:
+        duplicate_mask = df.astype("string").duplicated(keep=False)
+        for position, is_duplicate in enumerate(duplicate_mask.tolist(), start=2):
+            if is_duplicate:
+                issues.append(_issue(position, "", "duplicate", "warning",
+                                     "Entire row duplicates another row in this file."))
+
+    schema = pa.DataFrameSchema(
+        {str(column): pa.Column(nullable=True, required=False) for column in df.columns},
+        strict=False,
+        coerce=False,
     )
-with col2:
-    st.download_button(
-        "📥 Download QA Issues List",
-        issues.to_csv(index=False),
-        file_name="qa_issues.csv"
-    )
-with col3:
-    st.download_button(
-        "📥 Download Filtered View",
-        display_df.to_csv(index=False),
-        file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-    )
+    try:
+        schema.validate(df, lazy=True)
+    except pa.errors.SchemaErrors as exc:
+        failure_cases = exc.failure_cases
+        for _, failure in failure_cases.iterrows():
+            issues.append(_issue(
+                "", str(failure.get("column", "")), "schema", "error",
+                str(failure.get("failure_case", "DataFrame schema validation failed")),
+            ))
 
-st.divider()
+    if outlier_checks:
+        for column in df.columns:
+            values = pd.to_numeric(df[column].astype("string").str.strip(), errors="coerce")
+            valid = values.dropna()
+            if len(valid) < 8 or valid.nunique() < 4:
+                continue
+            q1, q3 = valid.quantile([0.25, 0.75])
+            spread = q3 - q1
+            if not np.isfinite(spread) or spread <= 0:
+                continue
+            low, high = q1 - 1.5 * spread, q3 + 1.5 * spread
+            outlier_positions = ((values < low) | (values > high)).fillna(False).tolist()
+            for position, is_outlier in enumerate(outlier_positions, start=2):
+                if is_outlier:
+                    issues.append(_issue(position, column, "anomaly", "warning",
+                                         f"Numeric value {values.iloc[position - 2]} is outside the IQR screening range "
+                                         f"({low:g} to {high:g}); review, do not auto-correct."))
 
-# ---- ORIGINAL TABS ----
-tab_report, tab_issues, tab_corrections, tab_clean = st.tabs(
-    ["📋 QA Report", "📊 Issue List", "🔧 Correction Log", "✨ Clean Dataset"]
-)
+    return pd.DataFrame(issues, columns=ISSUE_COLUMNS)
 
-with tab_report:
-    # The managed temporary directory is removed automatically after the report is read.
-    with tempfile.TemporaryDirectory(prefix="m4s_qa_") as temp_dir:
-        report_path = pathlib.Path(temp_dir) / "qa_report.md"
-        generate_qa_report(clean_df, issues, correction_log, report_path)
-        report_text = report_path.read_text(encoding="utf-8")
-    st.markdown(report_text)
-    st.download_button("📥 Download qa_report.md", report_text, file_name="qa_report.md")
 
-with tab_issues:
-    st.dataframe(issues, width='stretch')
-    st.download_button(
-        "📥 Download qa_issues.csv",
-        issues.to_csv(index=False),
-        file_name="qa_issues.csv"
-    )
+def findings_summary(findings: pd.DataFrame) -> dict[str, int]:
+    """Return stable summary counts for the app and tests."""
+    if findings.empty:
+        return {"findings": 0, "errors": 0, "warnings": 0, "affected_rows": 0}
+    row_values = findings["row_number"].astype("string")
+    has_row = row_values.notna() & (row_values != "")
+    return {
+        "findings": int(len(findings)),
+        "errors": int((findings["severity"] == "error").sum()),
+        "warnings": int((findings["severity"] == "warning").sum()),
+        "affected_rows": int(row_values[has_row].nunique()),
+    }
 
-with tab_corrections:
-    st.dataframe(correction_log, width='stretch')
-    st.download_button(
-        "📥 Download correction_log.csv",
-        correction_log.to_csv(index=False),
-        file_name="correction_log.csv"
-    )
 
-with tab_clean:
-    st.dataframe(clean_df, width='stretch')
-    st.download_button(
-        "📥 Download clean_dataset.csv",
-        clean_df.to_csv(index=False),
-        file_name="clean_dataset.csv"
-    )
+def render_generic_csv_checker():
+    st.title("🧭 Generic Kobo CSV Quality Checker")
+    st.caption("General-purpose CSV screening. Uploads are processed by the server running this app; use a local deployment for sensitive data unless hosting protections have been reviewed.")
+    with st.expander("What this checks"):
+        st.markdown("""
+        - CSV structure and resource-level issues (Frictionless)
+        - Blank values and configured missing-value tokens
+        - Exact duplicate rows
+        - Optional IQR-based numeric outlier screening
+        - Optional JSON contract for required columns, allowed values, types, numeric ranges, and unique keys
+        - No automatic corrections; review findings before changing source data
+        """)
+    uploaded_csv = st.file_uploader("Upload a raw Kobo CSV export", type=["csv"], key="generic_csv_upload")
+    missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null", key="generic_missing_tokens")
+    check_duplicates = st.checkbox("Check exact duplicate rows", value=True, key="generic_duplicates")
+    check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True, key="generic_outliers")
+    contract_file = st.file_uploader("Optional validation contract (JSON)", type=["json"], key="generic_contract")
+    contract = None
+    if contract_file is not None:
+        try:
+            contract = json.loads(contract_file.getvalue().decode("utf-8"))
+            if not isinstance(contract, dict):
+                raise ValueError("The contract root must be a JSON object.")
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            st.error(f"Invalid validation contract: {exc}")
+            st.stop()
+    if uploaded_csv is None:
+        st.info("Upload a CSV to begin.")
+        return
+    data = uploaded_csv.getvalue()
+    try:
+        frame = read_csv_bytes(data)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    tokens = tuple(token.strip() for token in missing_text.split(","))
+    try:
+        with st.spinner("Checking CSV structure and values…"):
+            findings = run_quality_checks(
+                data, uploaded_csv.name, frame,
+                missing_tokens=tokens,
+                duplicate_rows=check_duplicates,
+                outlier_checks=check_outliers,
+                contract=contract,
+            )
+    except QualityCheckError as exc:
+        st.error(f"Quality checks could not complete during {exc.stage}. No partial results are shown. Retry; if the problem persists, report the failure without sharing sensitive survey data.")
+        return
+    summary = findings_summary(findings)
+    a, b, c, d = st.columns(4)
+    a.metric("Rows", len(frame))
+    b.metric("Columns", len(frame.columns))
+    c.metric("Findings", summary["findings"])
+    d.metric("Affected rows", summary["affected_rows"])
+    st.subheader("Findings")
+    if findings.empty:
+        st.success("No findings from the enabled generic checks.")
+    else:
+        categories = st.multiselect("Filter categories", sorted(findings["category"].dropna().unique()), key="generic_categories")
+        visible = findings[findings["category"].isin(categories)] if categories else findings
+        st.dataframe(visible, use_container_width=True, hide_index=True)
+        st.download_button("Download findings CSV", visible.to_csv(index=False).encode("utf-8"),
+                           file_name="kobo_csv_findings.csv", mime="text/csv")
+    with st.expander("Preview input (first 100 rows)"):
+        st.dataframe(frame.head(100), use_container_width=True, hide_index=True)
+    st.download_button("Download unchanged input CSV", data=data, file_name=uploaded_csv.name, mime="text/csv")
 
-# ---- QUICK REFERENCE ----
-with st.expander("📖 QA Column Reference"):
+
+st.set_page_config(page_title="M4S Field Data QA Checker", page_icon="🌿", layout="wide")
+mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV quality checker"])
+if mode == "Generic CSV quality checker":
+    render_generic_csv_checker()
+else:
+    st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
+    st.title("🌿 M4S Field Data QA Checker")
+    st.caption("Upload the raw Kobo export (.xlsx). The file is processed by the server running this app. Use a local deployment for sensitive field data unless the host's access controls and data-protection arrangements have been reviewed.")
+    
+    uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
+    
+    if uploaded is None:
+        st.info("📤 Upload a file to run the pipeline.")
+        st.stop()
+    
+    # ---- run the pipeline ----
+    with st.spinner("Running QA pipeline..."):
+        try:
+            raw_df, df = load_data(uploaded)
+        except ValueError as e:
+            st.error(f"❌ Error loading data: {str(e)}")
+            st.stop()
+    
+        df = standardize(df)
+        issues = validate(df)
+        
+        # Add QA columns to the raw data
+        raw_with_qa = add_qa_columns(raw_df, issues)
+        
+        clean_df, correction_log = correct(df)
+    
+    # ---- summary metrics ----
+    total = len(clean_df)
+    flagged = issues.row_index.nunique() if len(issues) else 0
+    errors = (issues.severity == "error").sum() if len(issues) else 0
+    warnings = (issues.severity == "warning").sum() if len(issues) else 0
+    
+    st.divider()
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("📊 Total records", total)
+    col2.metric("✅ Clean records", total - flagged)
+    col3.metric("❌ Errors", int(errors), help="Must be fixed before analysis")
+    col4.metric("⚠️ Warnings", int(warnings), help="Review and decide if action needed")
+    col5.metric("🔧 Corrections applied", len(correction_log))
+    
+    st.divider()
+    
+    # ---- QA COLUMNS OVERVIEW ----
+    st.subheader("🔍 QA Columns — Quick Issue Identification")
     st.markdown("""
-    ### QA Flag Columns Explained
-    
-    | Column | Description | When triggered |
-    |--------|-------------|----------------|
-    | **qa_gps_precision_0** | GPS precision is 0.0 | Recorded precision is 0.0 (likely no GPS fix) |
-    | **qa_missing_coordinates** | Missing GPS coordinates | No lat/long recorded |
-    | **qa_outside_boundary** | Outside survey area | GPS point >500m from site centroid |
-    | **qa_duplicate_uuid** | Duplicate submission | Same UUID appears more than once |
-    | **qa_species_logic** | Species logic error | Species marked present but 0% cover, or vice versa |
-    | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to Epicover Percentage |
-    
-    ### Message Column
-    The `Message` column provides detailed descriptions of all issues for each row.
-    Multiple issues are separated by semicolons (;).
-    
-    ### How to Use This Tool
-    1. **Review the summary** to understand what issues exist
-    2. **Filter by QA columns** to find all rows with specific issues
-    3. **Check the Message column** for detailed error descriptions
-    4. **Download raw_with_qa_flags.csv** to fix issues in Excel
-    5. **Fix issues in the raw data** and re-upload
-    6. **Use the Message column** as a checklist during data cleaning
+    The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
+    The Message column provides detailed descriptions of all issues for each row.
+    **Filter by any column to find rows that need fixing!**
     """)
-
-st.caption(f"📁 Dataset: {uploaded.name} | 📊 Records: {total} | ⚠️ Issues: {len(issues)} | 🔧 Corrections: {len(correction_log)}")
+    
+    # Show QA columns summary
+    qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates', 
+               'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
+               'qa_coverage_mismatch']
+    
+    qa_summary = {}
+    for col in qa_cols:
+        if col in raw_with_qa.columns:
+            if col == 'qa_coverage_mismatch':
+                count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
+            else:
+                count = (raw_with_qa[col] == 'Yes').sum()
+            qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
+    
+    if sum(qa_summary.values()) > 0:
+        cols = st.columns(len(qa_summary))
+        for i, (name, count) in enumerate(qa_summary.items()):
+            if count > 0:
+                cols[i].metric(f"⚠️ {name}", count, delta=None)
+            else:
+                cols[i].metric(f"✅ {name}", 0, delta=None)
+    else:
+        st.success("🎉 No QA flags triggered! All data looks clean.")
+    
+    st.divider()
+    
+    # ---- FILTERABLE DATA VIEW ----
+    st.subheader("📊 Filter Raw Data by QA Flags")
+    
+    # Show the raw data with QA columns
+    display_df = raw_with_qa.copy()
+    
+    # Add filter options
+    filter_cols = st.columns(4)
+    with filter_cols[0]:
+        show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
+    with filter_cols[1]:
+        if show_only_with_issues:
+            qa_cols_for_filter = st.multiselect(
+                "Filter by QA Flag",
+                options=qa_cols,
+                default=qa_cols
+            )
+    with filter_cols[2]:
+        if not show_only_with_issues:
+            search = st.text_input("Search in data", placeholder="Search any column...")
+    with filter_cols[3]:
+        show_message_only = st.checkbox("Show only rows with Message", value=False)
+    
+    # Apply filters
+    if show_only_with_issues:
+        # Show only rows with any QA flag
+        mask = pd.Series(False, index=display_df.index)
+        for col in qa_cols_for_filter:
+            if col in display_df.columns:
+                if col == 'qa_coverage_mismatch':
+                    mask = mask | display_df[col].str.startswith('Yes', na=False)
+                else:
+                    mask = mask | (display_df[col] == 'Yes')
+        display_df = display_df[mask]
+    elif show_message_only:
+        display_df = display_df[display_df['Message'] != '']
+    elif search:
+        # Simple search across all columns
+        mask = pd.Series(False, index=display_df.index)
+        for col in display_df.select_dtypes(include=['object', 'string']).columns:
+            mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
+        display_df = display_df[mask]
+    
+    # Show count
+    st.caption(f"Showing {len(display_df)} rows")
+    
+    # Display the data - highlight QA columns and Message
+    st.dataframe(
+        display_df,
+        width='stretch',
+        column_config={
+            col: st.column_config.Column(
+                col,
+                help=f"QA flag: 'Yes' indicates this row has the issue",
+                width='small'
+            ) for col in qa_cols if col in display_df.columns
+        }
+    )
+    
+    # ---- DOWNLOAD BUTTONS ----
+    st.divider()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.download_button(
+            "📥 Download Raw Data with QA Flags & Messages",
+            raw_with_qa.to_csv(index=False),
+            file_name="raw_with_qa_flags.csv"
+        )
+    with col2:
+        st.download_button(
+            "📥 Download QA Issues List",
+            issues.to_csv(index=False),
+            file_name="qa_issues.csv"
+        )
+    with col3:
+        st.download_button(
+            "📥 Download Filtered View",
+            display_df.to_csv(index=False),
+            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+        )
+    
+    st.divider()
+    
+    # ---- ORIGINAL TABS ----
+    tab_report, tab_issues, tab_corrections, tab_clean = st.tabs(
+        ["📋 QA Report", "📊 Issue List", "🔧 Correction Log", "✨ Clean Dataset"]
+    )
+    
+    with tab_report:
+        # The managed temporary directory is removed automatically after the report is read.
+        with tempfile.TemporaryDirectory(prefix="m4s_qa_") as temp_dir:
+            report_path = pathlib.Path(temp_dir) / "qa_report.md"
+            generate_qa_report(clean_df, issues, correction_log, report_path)
+            report_text = report_path.read_text(encoding="utf-8")
+        st.markdown(report_text)
+        st.download_button("📥 Download qa_report.md", report_text, file_name="qa_report.md")
+    
+    with tab_issues:
+        st.dataframe(issues, width='stretch')
+        st.download_button(
+            "📥 Download qa_issues.csv",
+            issues.to_csv(index=False),
+            file_name="qa_issues.csv"
+        )
+    
+    with tab_corrections:
+        st.dataframe(correction_log, width='stretch')
+        st.download_button(
+            "📥 Download correction_log.csv",
+            correction_log.to_csv(index=False),
+            file_name="correction_log.csv"
+        )
+    
+    with tab_clean:
+        st.dataframe(clean_df, width='stretch')
+        st.download_button(
+            "📥 Download clean_dataset.csv",
+            clean_df.to_csv(index=False),
+            file_name="clean_dataset.csv"
+        )
+    
+    # ---- QUICK REFERENCE ----
+    with st.expander("📖 QA Column Reference"):
+        st.markdown("""
+        ### QA Flag Columns Explained
+        
+        | Column | Description | When triggered |
+        |--------|-------------|----------------|
+        | **qa_gps_precision_0** | GPS precision is 0.0 | Recorded precision is 0.0 (likely no GPS fix) |
+        | **qa_missing_coordinates** | Missing GPS coordinates | No lat/long recorded |
+        | **qa_outside_boundary** | Outside survey area | GPS point >500m from site centroid |
+        | **qa_duplicate_uuid** | Duplicate submission | Same UUID appears more than once |
+        | **qa_species_logic** | Species logic error | Species marked present but 0% cover, or vice versa |
+        | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to Epicover Percentage |
+        
+        ### Message Column
+        The `Message` column provides detailed descriptions of all issues for each row.
+        Multiple issues are separated by semicolons (;).
+        
+        ### How to Use This Tool
+        1. **Review the summary** to understand what issues exist
+        2. **Filter by QA columns** to find all rows with specific issues
+        3. **Check the Message column** for detailed error descriptions
+        4. **Download raw_with_qa_flags.csv** to fix issues in Excel
+        5. **Fix issues in the raw data** and re-upload
+        6. **Use the Message column** as a checklist during data cleaning
+        """)
+    
+    st.caption(f"📁 Dataset: {uploaded.name} | 📊 Records: {total} | ⚠️ Issues: {len(issues)} | 🔧 Corrections: {len(correction_log)}")
