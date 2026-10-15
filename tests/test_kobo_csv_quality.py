@@ -58,3 +58,29 @@ def test_row_numbers_are_positional_even_with_duplicate_dataframe_index():
     outlier_rows = set(findings.loc[findings["category"] == "anomaly", "row_number"])
     assert missing_rows == {9}
     assert outlier_rows == {9}
+
+
+def test_required_column_contract_flags_missing_fields_without_changing_generic_defaults():
+    frame = pd.DataFrame({"participant_id": ["0012"], "answer": ["yes"]})
+
+    default_findings = validate_dataframe(frame, duplicate_rows=False, outlier_checks=False)
+    contract_findings = validate_dataframe(
+        frame, duplicate_rows=False, outlier_checks=False,
+        required_columns=("participant_id", "submitted_at", "submitted_at", ""),
+    )
+
+    assert not (default_findings["category"] == "schema").any()
+    missing = contract_findings[contract_findings["category"] == "schema"]
+    assert len(missing) == 1
+    assert missing.iloc[0]["column"] == "submitted_at"
+    assert missing.iloc[0]["severity"] == "error"
+    assert missing.iloc[0]["row_number"] == ""
+
+
+def test_required_column_contract_accepts_present_fields():
+    frame = pd.DataFrame({"participant_id": ["0012"], "answer": ["yes"]})
+    findings = validate_dataframe(
+        frame, duplicate_rows=False, outlier_checks=False,
+        required_columns=("participant_id", "answer"),
+    )
+    assert not (findings["category"] == "schema").any()
