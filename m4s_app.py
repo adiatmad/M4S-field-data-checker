@@ -45,9 +45,7 @@ import pandas as pd
 import numpy as np
 from rapidfuzz import fuzz, process
 
-# ----------------------------------------------------------------------
 # PROJECT-SPECIFIC REFERENCE DATA
-# ----------------------------------------------------------------------
 
 # Canonical seagrass species list (from the form's own choice list)
 SPECIES_LIST = [
@@ -79,9 +77,6 @@ DURATION_TOO_FAST_S = 60
 DURATION_LONG_SESSION_S = 8 * 3600
 
 
-# ----------------------------------------------------------------------
-# STAGE 1: LOAD
-# ----------------------------------------------------------------------
 
 # Explicit aliases for the current Tetun-language Kobo export. These map known
 # labels only; unknown headers are preserved and required fields are never guessed.
@@ -186,9 +181,6 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return raw, working
 
 
-# ----------------------------------------------------------------------
-# STAGE 2: STANDARDIZE
-# ----------------------------------------------------------------------
 
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
     obj_cols = df.select_dtypes(include="object").columns
@@ -228,9 +220,6 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ----------------------------------------------------------------------
-# STAGE 3: VALIDATE
-# ----------------------------------------------------------------------
 
 def _new_issue(idx, uuid, category, field, severity, message):
     return dict(row_index=idx, uuid=uuid, category=category, field=field,
@@ -456,9 +445,6 @@ def validate(df) -> pd.DataFrame:
     return pd.DataFrame(all_issues, columns=columns)
 
 
-# ----------------------------------------------------------------------
-# STAGE 4: ADD QA COLUMNS TO RAW DATA
-# ----------------------------------------------------------------------
 
 def add_qa_columns(df, issues):
     """
@@ -468,7 +454,6 @@ def add_qa_columns(df, issues):
     """
     df_qa = df.copy()
     
-    # Initialize all QA columns with empty strings
     qa_columns = [
         'qa_gps_precision_0',
         'qa_missing_coordinates',
@@ -481,7 +466,6 @@ def add_qa_columns(df, issues):
     for col in qa_columns:
         df_qa[col] = ''
     
-    # Initialize Message column
     df_qa['Message'] = ''
     
     # Store messages for each row
@@ -515,7 +499,6 @@ def add_qa_columns(df, issues):
 
             elif category == 'duplicate' and field == '_uuid':
                 df_qa.at[row_idx, 'qa_duplicate_uuid'] = 'Yes'
-                # Count duplicates
                 dup_count = (df['_uuid'] == df_qa.at[row_idx, '_uuid']).sum()
                 row_messages[row_idx].append(f"Duplicate submission - same UUID appears {dup_count} times in the dataset.")
                 
@@ -553,9 +536,6 @@ def add_qa_columns(df, issues):
     return df_qa
 
 
-# ----------------------------------------------------------------------
-# STAGE 5: CORRECT
-# ----------------------------------------------------------------------
 
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
     values = series.dropna().unique().tolist()
@@ -649,9 +629,6 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df, correction_log
 
 
-# ----------------------------------------------------------------------
-# STAGE 6: QA REPORT
-# ----------------------------------------------------------------------
 
 def generate_qa_report(df, issues, correction_log, out_path):
     total = len(df)
@@ -697,7 +674,6 @@ def generate_qa_report(df, issues, correction_log, out_path):
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
 
 
-# ----------------------------------------------------------------------
 
 # Generic CSV contract validation and reusable checks are embedded below.
 
@@ -1215,13 +1191,11 @@ else:
     
     st.divider()
     
-    # ---- FILTERABLE DATA VIEW ----
     st.subheader("Filter raw data by QA flags")
     
     # Show the raw data with QA columns
     display_df = raw_with_qa.copy()
     
-    # Add filter options
     filter_cols = st.columns(4)
     with filter_cols[0]:
         show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
@@ -1238,7 +1212,6 @@ else:
     with filter_cols[3]:
         show_message_only = st.checkbox("Show only rows with Message", value=False)
     
-    # Apply filters
     if show_only_with_issues:
         # Show only rows with any QA flag
         mask = pd.Series(False, index=display_df.index)
@@ -1258,10 +1231,8 @@ else:
             mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
         display_df = display_df[mask]
     
-    # Show count
     st.caption(f"Showing {len(display_df)} rows")
     
-    # Display the data - highlight QA columns and Message
     st.dataframe(
         display_df,
         width='stretch',
