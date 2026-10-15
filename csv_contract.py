@@ -79,6 +79,10 @@ def validate_contract(df: pd.DataFrame, contract: dict) -> pd.DataFrame:
         if ({"min", "max"} & set(rules)) and kind not in ("number", "integer"):
             raise ValueError(f"Numeric bounds for '{column}' require type 'number' or 'integer'.")
         if column not in df.columns:
+            issues.append(_issue(
+                "", column,
+                "Column referenced by the contract is missing; its configured checks could not run."
+            ))
             continue
 
         values = df[column].astype("string")
