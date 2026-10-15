@@ -112,8 +112,8 @@ def test_load_data_rejects_missing_m4s_required_columns(tmp_path):
 
 def test_mandatory_fields_flag_whitespace_only_values():
     frame = _canonicalize_form_columns(tetun_export_frame())
-    frame.loc[0, "Numeru Quadrante"] = "   "
-    frame.loc[0, "Naran Koletor"] = "  "
+    frame.loc[0, "Quadrat Number"] = "   "
+    frame.loc[0, "Collector Name"] = "  "
     standardized = standardize(frame)
 
     issues = validate(standardized)
@@ -125,7 +125,7 @@ def test_mandatory_fields_flag_whitespace_only_values():
 
 def test_invalid_nonblank_numeric_values_are_reported():
     frame = _canonicalize_form_columns(tetun_export_frame())
-    frame.loc[0, "Persentajen Kober Alga (%)"] = "not-a-number"
+    frame.loc[0, "Percentage of Algal Cover (%)"] = "not-a-number"
     standardized = standardize(frame)
 
     issues = validate(standardized)
