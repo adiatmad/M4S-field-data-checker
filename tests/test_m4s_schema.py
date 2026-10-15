@@ -49,6 +49,24 @@ def test_tetun_headers_map_to_canonical_names_without_mutating_raw_columns():
     assert canonical.loc[0, "unrecognized_field"] == "keep me"
 
 
+def test_header_alias_lookup_ignores_whitespace_variations_without_rewriting_unknown_headers():
+    raw = tetun_export_frame().rename(
+        columns={
+            "Naran Koletor": "  Naran   Koletor ",
+            "Persentajen Epicover (%) ": "Persentajen   Epicover (%)",
+            "Persentajen (Ho) Halophila ovalis  (%)": " Persentajen (Ho) Halophila ovalis (%) ",
+        }
+    )
+
+    canonical = _canonicalize_form_columns(raw)
+
+    assert canonical.loc[0, "Collector Name"] == "Field Team"
+    assert canonical.loc[0, "Epicover Percentage (%)"] == 40
+    assert canonical.loc[0, "Percent Halophila ovalis (%)"] == 40
+    assert "  Naran   Koletor " in raw.columns
+    assert "unrecognized_field" in canonical.columns
+
+
 def test_load_data_accepts_current_tetun_export_and_preserves_raw_copy(tmp_path):
     path = tmp_path / "tetun_export.xlsx"
     source = tetun_export_frame()
