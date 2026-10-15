@@ -44,7 +44,9 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from rapidfuzz import fuzz, process
+
 # PROJECT-SPECIFIC REFERENCE DATA
+
 # Canonical seagrass species list (from the form's own choice list)
 SPECIES_LIST = [
     "Halophila ovalis", "Halophila minor", "Halodule pinifolia",
@@ -73,6 +75,9 @@ GPS_PRECISION_ERROR_M = 30
 # Survey duration sanity (seconds)
 DURATION_TOO_FAST_S = 60
 DURATION_LONG_SESSION_S = 8 * 3600
+
+
+
 # Explicit aliases for the current Tetun-language Kobo export. These map known
 # labels only; unknown headers are preserved and required fields are never guessed.
 BASE_COLUMN_ALIASES = {
@@ -174,6 +179,9 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             "BASE_COLUMN_ALIASES / _canonicalize_form_columns() if the form changed."
         )
     return raw, working
+
+
+
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
     obj_cols = df.select_dtypes(include="object").columns
     for c in obj_cols:
@@ -210,6 +218,9 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
         df[c] = parsed
     df.attrs["numeric_parse_failures"] = parse_failures
     return df
+
+
+
 def _new_issue(idx, uuid, category, field, severity, message):
     return dict(row_index=idx, uuid=uuid, category=category, field=field,
                 severity=severity, message=message)
@@ -432,6 +443,9 @@ def validate(df) -> pd.DataFrame:
     # must work for clean datasets too.
     columns = ["row_index", "uuid", "category", "field", "severity", "message"]
     return pd.DataFrame(all_issues, columns=columns)
+
+
+
 def add_qa_columns(df, issues):
     """
     Add QA flag columns and a Message column to the dataframe.
@@ -439,6 +453,7 @@ def add_qa_columns(df, issues):
     The Message column contains detailed descriptions of all issues for each row.
     """
     df_qa = df.copy()
+    
     qa_columns = [
         'qa_gps_precision_0',
         'qa_missing_coordinates',
@@ -450,6 +465,7 @@ def add_qa_columns(df, issues):
     
     for col in qa_columns:
         df_qa[col] = ''
+    
     df_qa['Message'] = ''
     
     # Store messages for each row
@@ -518,6 +534,9 @@ def add_qa_columns(df, issues):
             df_qa.at[idx, 'Message'] = '; '.join(messages)
     
     return df_qa
+
+
+
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
     values = series.dropna().unique().tolist()
     norm = {v: re.sub(r"\s+", " ", v.replace("_", " ")).strip() for v in values}
@@ -608,6 +627,9 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     correction_log = pd.DataFrame(log_rows)
     return df, correction_log
+
+
+
 def generate_qa_report(df, issues, correction_log, out_path):
     total = len(df)
     # Defensive normalization for callers that pass an empty, untyped DataFrame.
@@ -650,6 +672,9 @@ def generate_qa_report(df, issues, correction_log, out_path):
                       f"{r.severity} | {r.message} |")
 
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
+
+
+
 # Generic CSV contract validation and reusable checks are embedded below.
 
 """Explicit, user-authored contracts for generic CSV quality checks.
@@ -1165,10 +1190,12 @@ else:
         st.success("No flags were triggered by the summary checks shown here. This does not certify the dataset as error-free; review the enabled checks and survey protocol.")
     
     st.divider()
+    
     st.subheader("Filter raw data by QA flags")
     
     # Show the raw data with QA columns
     display_df = raw_with_qa.copy()
+    
     filter_cols = st.columns(4)
     with filter_cols[0]:
         show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
@@ -1184,6 +1211,7 @@ else:
             search = st.text_input("Search in data", placeholder="Search any column...")
     with filter_cols[3]:
         show_message_only = st.checkbox("Show only rows with Message", value=False)
+    
     if show_only_with_issues:
         # Show only rows with any QA flag
         mask = pd.Series(False, index=display_df.index)
@@ -1202,7 +1230,9 @@ else:
         for col in display_df.select_dtypes(include=['object', 'string']).columns:
             mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
         display_df = display_df[mask]
+    
     st.caption(f"Showing {len(display_df)} rows")
+    
     st.dataframe(
         display_df,
         width='stretch',
