@@ -100,11 +100,12 @@ def validate_contract(df: pd.DataFrame, contract: dict) -> pd.DataFrame:
                 issues.append(_issue(pos + 2, column,
                     f"Value {values.iloc[pos]!r} is not a valid {kind}."))
             if "min" in rules or "max" in rules:
-                outside = parsed.notna()
+                outside = pd.Series(False, index=parsed.index)
                 if "min" in rules:
-                    outside &= parsed < rules["min"]
+                    outside |= parsed < rules["min"]
                 if "max" in rules:
-                    outside |= parsed.notna() & (parsed > rules["max"])
+                    outside |= parsed > rules["max"]
+                outside &= parsed.notna()
                 for pos in np.flatnonzero(outside.to_numpy()):
                     issues.append(_issue(pos + 2, column,
                         f"Numeric value {parsed.iloc[pos]:g} is outside the configured range."))
