@@ -64,23 +64,93 @@ DURATION_LONG_SESSION_S = 8 * 3600
 # STAGE 1 — LOAD
 # ----------------------------------------------------------------------
 
+# Explicit aliases for the current Tetun-language Kobo export. These map known
+# labels only; unknown headers are preserved and required fields are never guessed.
+BASE_COLUMN_ALIASES = {
+    "Naran Koletor": "Collector Name",
+    "Data no Horas": "Date and time",
+    "Postu Administrativu": "Administration Post",
+    "Suku": "Village",
+    "_GPS Lokal_latitude": "_Local GPS_latitude",
+    "_GPS Lokal_longitude": "_Local GPS_longitude",
+    "_GPS Lokal_altitude": "_Local GPS_altitude",
+    "_GPS Lokal_precision": "_Local GPS_precision",
+    "Numeru Tranjektu": "Transect Number",
+    "Numeru Quadrante": "Quadrat Number",
+    "Prezensa Du'ut tasi (Seagrass)": "Presence of Seagrass",
+    "Persentajen Kober Alga (%)": "Percentage of Algal Cover (%)",
+    "Persentajen Epicover (%) ": "Epicover Percentage (%)",
+    "Foto Quadrante_URL": "Quadrat Photo_URL",
+}
+
+def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Map explicitly supported Tetun Kobo labels to the pipeline's canonical names."""
+    df = df.copy()
+    aliases = dict(BASE_COLUMN_ALIASES)
+    species_prefix = "Espesie du'ut tasi (seagrass) ne'ebe prezensa iha Quadrante/"
+    for species in SPECIES_LIST:
+        aliases[f"{species_prefix}{species}"] = f"Seagrass species present in the Quadrat/{species}"
+
+    # Select the first known percentage column for each species. Some exports include
+    # older/typo variants as extra columns; leave those untouched rather than merging data.
+    percentage_candidates = {
+        "Halophila ovalis": ["Persentajen (Ho) Halophila ovalis  (%)", "Persentajen Halophila ovalis (%)"],
+        "Halophila minor": ["Persentajen (Hm) Halophila minor (%)", "Persentajen Halophila minor (%)"],
+        "Halodule pinifolia": ["Persentajen Halodule pinifolia (%)"],
+        "Halodule uninervis": ["Persentajen (Hu) Halodule uninervis (%)", "Persentajen Halodule uninervis (%)"],
+        "Halophila decipiens": ["Persentajen (Hd) Halophila decipiens (%)", "Persentajen Halophila decipiens (%)"],
+        "Halophila beccarii": ["Persentajen (Hb) Halophila beccarii (%)", "Persentajen Halophila beccarii (%)"],
+        "Halophila spinulosa": ["Persentajen (Hs) Halophila spinulosa (%)", "Persentajen Halophila spinulosa (%)"],
+        "Enhalus acoroides": ["Persentajen (Ea) Enhalus acoroides (%)", "Persentajen Enhalus acoroides (%)"],
+        "Thalassia hemprichii": ["Persentajen (Th) Thalassia hemprichii (%)", "Persentajen Thalassia hemprichii (%)", "Persentajen (Th) Thhalassia hemprichii (%)", "Persentajen Thhalassia hemprichii (%)"],
+        "Cymodocea rotundata": ["Persentajen (Cr) Cymodocea rotundata (%)", "Persentajen Cymodocea rotundata (%)"],
+        "Cymodocea serrulata": ["Persentajen (Cs) Cymodocea serrulata (%)", "Persentajen Cymodocea serrulata (%)"],
+        "Syringodium isoetifolium": ["Persentajen (Si) Syringodium isoetifolium (%)", "Persentajen Syringodium isoetifolium (%)"],
+        "Ruppia maritima": ["Persentajen (Rm) Ruppia maritima (%)", "Persentajen Ruppia maritima (%)"],
+        "Thalassodendron ciliatum": ["Persentajen (Tc) Thalassodendron ciliatum (%)", "Persentajen Thalassodendron ciliatum (%)"],
+    }
+    for species, candidates in percentage_candidates.items():
+        for candidate in candidates:
+            aliases[candidate] = f"Percent {species} (%)"
+
+    # Only rename when the canonical target is absent. If both are present, preserve
+    # both columns and avoid silently overwriting one source field with another.
+    rename = {}
+    existing = set(df.columns)
+    claimed_targets = set(existing)
+    for source in df.columns:
+        target = aliases.get(source)
+        if target and target not in claimed_targets:
+            rename[source] = target
+            claimed_targets.add(target)
+    df = df.rename(columns=rename)
+
+    # Tetun labels use Sim/Lae for yes/no; normalize only this known field's values.
+    presence = "Presence of Seagrass"
+    if presence in df.columns:
+        df[presence] = df[presence].replace({"Sim": "Yes", "Lae": "No", "sim": "Yes", "lae": "No"})
+    return df
+
+
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the raw Kobo export. Returns (raw_df, working_df)."""
+    """Read a raw Kobo export and return (untouched raw data, canonical working copy)."""
     raw = pd.read_excel(path)
+    working = _canonicalize_form_columns(raw)
     required = [
         "start", "end", "Collector Name", "Date and time",
         "Administration Post", "Village", "_Local GPS_latitude",
         "_Local GPS_longitude", "_Local GPS_precision", "_uuid",
     ]
-    missing = [c for c in required if c not in raw.columns]
+    missing = [c for c in required if c not in working.columns]
     if missing:
+        available = ", ".join(map(str, raw.columns))
         raise ValueError(
-            f"Form schema changed — missing expected columns: {missing}. "
-            "Stopping rather than guessing; update SPECIES_LIST/column "
-            "references at the top of this file if the form was "
-            "intentionally redesigned."
+            "Unsupported Kobo form schema. Missing required fields after applying "
+            f"known header aliases: {missing}. Available headers: {available}. "
+            "No columns were inferred. Add a reviewed alias in "
+            "BASE_COLUMN_ALIASES / _canonicalize_form_columns() if the form changed."
         )
-    return raw, raw.copy()
+    return raw, working
 
 
 # ----------------------------------------------------------------------
