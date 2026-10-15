@@ -44,7 +44,7 @@ The generic checker runs in the Streamlit process and does not intentionally sen
 
 ## Limitations
 
-Generic checks are screening aids, not a replacement for the survey's XLSForm. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker. A clean result means only that the enabled checks emitted no findings; it does not certify the entire survey as valid.
+Generic checks are screening aids, not a replacement for the survey's XLSForm. The optional JSON contract validates only rules explicitly supplied by the user; it does not implement XLSForm skip logic, conditional requirements, or repeat groups. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker. A clean result means only that the enabled checks emitted no findings; it does not certify the entire survey as valid.
 
 ## Repository benchmark
 

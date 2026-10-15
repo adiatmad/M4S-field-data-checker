@@ -97,3 +97,22 @@ def test_value_check_crash_is_reported_without_returning_partial_findings(monkey
 
     assert exc.value.stage == "value validation"
     assert "internal details" not in str(exc.value)
+
+
+def test_run_quality_checks_applies_optional_contract():
+    data = b"record_id,consent\n001,yes\n002,maybe\n"
+    frame = read_csv_bytes(data)
+    findings = run_quality_checks(
+        data, "survey.csv", frame,
+        duplicate_rows=False,
+        outlier_checks=False,
+        contract={
+            "required_columns": ["record_id", "consent"],
+            "key_columns": ["record_id"],
+            "columns": {"consent": {"allowed_values": ["yes", "no"]}},
+        },
+    )
+    contract_findings = findings[findings["category"] == "contract"]
+    assert len(contract_findings) == 1
+    assert contract_findings.iloc[0]["column"] == "consent"
+    assert contract_findings.iloc[0]["row_number"] == 3

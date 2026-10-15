@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
+from csv_contract import validate_contract
 
 
 ISSUE_COLUMNS = ["row_number", "column", "category", "severity", "message"]
@@ -94,6 +95,7 @@ def run_quality_checks(
     missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
     duplicate_rows: bool = True,
     outlier_checks: bool = True,
+    contract: dict | None = None,
 ) -> pd.DataFrame:
     """Run all enabled stages or raise a stage-labelled error; never return partial findings."""
     try:
@@ -108,6 +110,9 @@ def run_quality_checks(
             duplicate_rows=duplicate_rows,
             outlier_checks=outlier_checks,
         )
+        if contract is not None:
+            contract_findings = validate_contract(df, contract)
+            values = pd.concat([values, contract_findings], ignore_index=True)[ISSUE_COLUMNS]
     except Exception as exc:
         raise QualityCheckError("value validation") from exc
 

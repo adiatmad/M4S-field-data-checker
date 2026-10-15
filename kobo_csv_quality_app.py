@@ -1,6 +1,8 @@
 """Streamlit interface for local-first, generic Kobo CSV quality checks."""
 from __future__ import annotations
 
+import json
+
 import streamlit as st
 
 from kobo_csv_quality import QualityCheckError, findings_summary, read_csv_bytes, run_quality_checks
@@ -16,6 +18,7 @@ with st.expander("What this checks"):
     - **Duplicates:** exact duplicate rows.
     - **Anomalies:** optional IQR screening for numeric-looking columns.
     - **Schema stage:** Pandera dataframe validation; this generic mode does not guess survey-specific types or business rules.
+    - **Optional JSON contract:** explicitly checks required columns, allowed values, types, numeric ranges, and duplicate keys using rules supplied by the survey owner.
 
     These are screening flags, not proof that a record is wrong. Review flagged values before changing source data.
     """)
@@ -24,6 +27,16 @@ uploaded = st.file_uploader("Upload a raw Kobo CSV export", type=["csv"])
 missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null")
 check_duplicates = st.checkbox("Check exact duplicate rows", value=True)
 check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True)
+contract_file = st.file_uploader("Optional validation contract (JSON)", type=["json"])
+contract = None
+if contract_file is not None:
+    try:
+        contract = json.loads(contract_file.getvalue().decode("utf-8"))
+        if not isinstance(contract, dict):
+            raise ValueError("The contract root must be a JSON object.")
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        st.error(f"Invalid validation contract: {exc}")
+        st.stop()
 
 if uploaded is not None:
     data = uploaded.getvalue()
@@ -41,6 +54,7 @@ if uploaded is not None:
                 missing_tokens=tokens,
                 duplicate_rows=check_duplicates,
                 outlier_checks=check_outliers,
+                contract=contract,
             )
     except QualityCheckError as exc:
         st.error(
