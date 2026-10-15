@@ -19,7 +19,7 @@ The goal is to identify reusable *patterns* for M4S seagrass field-data QA, not 
 | [getodk/validate](https://github.com/getodk/validate) | ODK/XLSForm validation | Useful for validating the form definition itself. It does not replace checks of submitted ecological observations. |
 | [digital-preservation/csv-validator](https://github.com/digital-preservation/csv-validator) | CSV structural validation | A comparison point for generic file checks, but not a substitute for M4S-specific ecological rules. |
 
-Additional search results included [digital-preservation/csv-validator](https://github.com/digital-preservation/csv-validator), a CSV structural validator, and [alimanfoo/csvvalidator](https://github.com/alimanfoo/csvvalidator), whose README says it is no longer maintained and points users to petl. They are not preferred implementation bases.
+Another result was [alimanfoo/csvvalidator](https://github.com/alimanfoo/csvvalidator), whose README says it is no longer maintained and points users to petl; it is not a preferred implementation base.
 
 ## What was changed in this branch
 
