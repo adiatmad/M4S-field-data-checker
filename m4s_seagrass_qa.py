@@ -152,6 +152,8 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         "start", "end", "Collector Name", "Date and time",
         "Administration Post", "Village", "_Local GPS_latitude",
         "_Local GPS_longitude", "_Local GPS_precision", "_uuid",
+        "Transect Number", "Quadrat Number", "Presence of Seagrass",
+        "Quadrat Photo_URL",
     ]
     missing = [c for c in required if c not in working.columns]
     if missing:
@@ -189,8 +191,21 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
         "Water Level (Cm)", "_Local GPS_latitude", "_Local GPS_longitude",
         "_Local GPS_altitude", "_Local GPS_precision",
     )]
+    # Preserve evidence of nonblank values that failed numeric parsing before coercion.
+    # This prevents strings such as "unknown" from becoming indistinguishable from blanks.
+    parse_failures = []
     for c in numeric_like:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+        original = df[c].copy()
+        parsed = pd.to_numeric(original, errors="coerce")
+        invalid = original.notna() & original.astype(str).str.strip().ne("") & parsed.isna()
+        for idx in df.index[invalid]:
+            parse_failures.append({
+                "row_index": idx,
+                "field": c,
+                "value": str(original.loc[idx]),
+            })
+        df[c] = parsed
+    df.attrs["numeric_parse_failures"] = parse_failures
     return df
 
 
@@ -288,13 +303,36 @@ def validate_percent_fields(df):
 
 def validate_mandatory_fields(df):
     mandatory = ["Collector Name", "Date and time", "Transect Number",
-                 "Quadrat Number", "Presence of Seagrass"]
+                 "Quadrat Number", "Presence of Seagrass", "_uuid"]
     issues = []
+    missing_columns = [field for field in mandatory if field not in df.columns]
+    for field in missing_columns:
+        issues.append(_new_issue(None, None, "schema", field, "error",
+                                  f"Required column '{field}' is missing"))
+    present_fields = [field for field in mandatory if field in df.columns]
     for i, r in df.iterrows():
-        for f in mandatory:
-            if f in df.columns and pd.isna(r[f]):
-                issues.append(_new_issue(i, r["_uuid"], "logic", f, "error",
-                                          f"Mandatory field '{f}' is missing"))
+        uid = r.get("_uuid")
+        for field in present_fields:
+            value = r[field]
+            is_blank = isinstance(value, str) and not value.strip()
+            if pd.isna(value) or is_blank:
+                issues.append(_new_issue(i, uid, "logic", field, "error",
+                                          f"Mandatory field '{field}' is missing or blank"))
+    return issues
+
+
+def validate_numeric_parse(df):
+    """Report nonblank numeric values that were coerced to NaN during standardization."""
+    issues = []
+    for failure in df.attrs.get("numeric_parse_failures", []):
+        issues.append(_new_issue(
+            failure["row_index"],
+            df.at[failure["row_index"], "_uuid"] if "_uuid" in df.columns else None,
+            "numeric",
+            failure["field"],
+            "error",
+            f"Nonblank value {failure['value']!r} is not a valid number",
+        ))
     return issues
 
 
@@ -320,9 +358,14 @@ def validate_timestamps(df):
 
 def validate_photos(df):
     issues = []
+    field = "Quadrat Photo_URL"
+    if field not in df.columns:
+        return [_new_issue(None, None, "schema", field, "error",
+                           "Required column 'Quadrat Photo_URL' is missing")]
     for i, r in df.iterrows():
-        if "Quadrat Photo_URL" in df.columns and pd.isna(r["Quadrat Photo_URL"]):
-            issues.append(_new_issue(i, r["_uuid"], "photo", "Quadrat Photo_URL", "error",
+        value = r[field]
+        if pd.isna(value) or (isinstance(value, str) and not value.strip()):
+            issues.append(_new_issue(i, r.get("_uuid"), "photo", field, "error",
                                       "No quadrat photo attached"))
     return issues
 
@@ -381,11 +424,13 @@ def validate_coverage_mismatch(df):
 def validate(df) -> pd.DataFrame:
     all_issues = []
     for fn in (validate_gps, validate_species_logic,
-               validate_percent_fields, validate_mandatory_fields, validate_timestamps,
-               validate_photos, validate_duplicate_submissions,
-               validate_coverage_mismatch):
+               validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
+               validate_timestamps, validate_photos, validate_duplicate_submissions):
         all_issues.extend(fn(df))
-    return pd.DataFrame(all_issues)
+    # Keep a stable schema even when no findings exist; report generation and CSV exports
+    # must work for clean datasets too.
+    columns = ["row_index", "uuid", "category", "field", "severity", "message"]
+    return pd.DataFrame(all_issues, columns=columns)
 
 
 # ----------------------------------------------------------------------
@@ -588,9 +633,12 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def generate_qa_report(df, issues, correction_log, out_path):
     total = len(df)
+    # Defensive normalization for callers that pass an empty, untyped DataFrame.
+    if issues.empty and not len(issues.columns):
+        issues = pd.DataFrame(columns=["row_index", "uuid", "category", "field", "severity", "message"])
     err = issues[issues.severity == "error"]
     warn = issues[issues.severity == "warning"]
-    flagged_records = issues.row_index.nunique() if len(issues) else 0
+    flagged_records = issues.row_index.dropna().nunique() if len(issues) else 0
     passed = total - flagged_records
 
     lines = []
