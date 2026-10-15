@@ -50,7 +50,8 @@ def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
     with tempfile.NamedTemporaryFile(suffix=suffix, dir=Path.cwd(), delete=True) as tmp:
         tmp.write(data)
         tmp.flush()
-        report = frictionless_validate(tmp.name)
+        # Frictionless treats absolute local paths as unsafe by default; pass a cwd-relative path.
+        report = frictionless_validate(Path(tmp.name).relative_to(Path.cwd()).as_posix())
     try:
         payload = report.to_dict()
     except AttributeError:
