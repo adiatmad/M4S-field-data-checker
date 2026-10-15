@@ -17,3 +17,8 @@ Never auto-delete duplicates, impute missing values, or auto-correct anomalies. 
 ## Explicit JSON contract
 
 The generic checker optionally accepts a JSON contract. Contract row references use the same convention as other CSV findings: the header is row 1 and the first data row is row 2. Missing required columns and missing key columns are file-level findings without a row number. Duplicate key values are reported for each involved row; investigate before editing or deleting records. Invalid contract syntax/rules stop that validation stage rather than being silently ignored.
+
+
+## M4S GPS site-distance alert
+
+The M4S GPS check compares each coordinate with one configured reference centroid and a 500 m radius. A point beyond that radius is a **review warning**, not proof that it lies outside the actual site polygon. Check the latitude/longitude values, coordinate reference system (CRS), and site assignment. A true polygon-containment check requires the authoritative site boundary geometry; the current centroid-only check does not perform one.
