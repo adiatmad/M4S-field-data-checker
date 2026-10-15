@@ -90,3 +90,25 @@ def test_load_data_still_rejects_missing_required_fields(tmp_path):
 
     assert "Collector Name" in str(exc.value)
     assert "Available headers" in str(exc.value)
+
+
+
+def test_existing_canonical_column_is_not_overwritten_by_tetun_alias():
+    raw = tetun_export_frame()
+    raw["Collector Name"] = ["Canonical value"]
+    canonical = _canonicalize_form_columns(raw)
+
+    assert canonical.loc[0, "Collector Name"] == "Canonical value"
+    # The translated source is retained rather than silently discarded.
+    assert canonical.loc[0, "Naran Koletor"] == "Field Team"
+
+
+def test_load_data_rejects_missing_mandatory_qa_input_even_if_core_metadata_exists(tmp_path):
+    source = tetun_export_frame().drop(columns=["Prezensa Du'ut tasi (Seagrass)"])
+    path = tmp_path / "missing_presence.xlsx"
+    source.to_excel(path, index=False)
+
+    with pytest.raises(ValueError, match="Unsupported Kobo form schema") as exc:
+        load_data(str(path))
+
+    assert "Presence of Seagrass" in str(exc.value)
