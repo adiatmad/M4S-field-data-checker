@@ -265,7 +265,7 @@ def validate_gps(df):
         dist = _haversine_m(*SITE_CENTROID, lat, lon)
         if dist > SITE_RADIUS_M:
             issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
-                                      f"{dist:.0f} m from the survey site centroid; review coordinates, CRS, and site assignment. This is a distance warning, not a polygon-containment test."))
+                                      f"{dist:.0f} m from the survey site centroid; review coordinates, CRS, and site assignment. This centroid-distance check does not test polygon containment."))
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
