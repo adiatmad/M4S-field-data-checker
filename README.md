@@ -46,6 +46,10 @@ The generic checker runs in the Streamlit process and does not intentionally sen
 
 Generic checks are screening aids, not a replacement for the survey's XLSForm. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker. A clean result means only that the enabled checks emitted no findings; it does not certify the entire survey as valid.
 
+## Repository benchmark
+
+A focused comparison of related biodiversity, Kobo, and data-validation projects—and the implementation decisions they informed—is documented in [`docs/REPOSITORY_BENCHMARK.md`](docs/REPOSITORY_BENCHMARK.md). The M4S pipeline now fails on missing required survey columns, flags whitespace-only mandatory values and invalid numeric strings, and handles clean runs with zero findings. The epicover/species-sum rule is disabled pending confirmation against the field protocol.
+
 ## Tests
 
 Run the automated test suite from the repository root:
