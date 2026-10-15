@@ -17,7 +17,7 @@ The goal is to identify reusable *patterns* for M4S seagrass field-data QA, not 
 | [posit-dev/pointblank](https://github.com/posit-dev/pointblank) | Declarative column, row, and table validations with reporting | Reference for future rule organization. A migration is not justified for this small pipeline. |
 | [datacarpentry/OpenRefine-ecology-lesson](https://github.com/datacarpentry/OpenRefine-ecology-lesson) | Ecological data cleaning and clustering of likely misspellings | Keep fuzzy matches as review candidates; do not treat similarity alone as proof that two field values are equivalent. |
 | [getodk/validate](https://github.com/getodk/validate) | ODK/XLSForm validation | Useful for validating the form definition itself. It does not replace checks of submitted ecological observations. |
-| [getodk/validate](https://github.com/getodk/validate) | ODK/XLSForm form-definition validation | Consider validating the survey form definition separately from the submitted observations; do not confuse form validation with content QA. |
+| [digital-preservation/csv-validator](https://github.com/digital-preservation/csv-validator) | CSV structural validation | A comparison point for generic file checks, but not a substitute for M4S-specific ecological rules. |
 
 Additional search results included [digital-preservation/csv-validator](https://github.com/digital-preservation/csv-validator), a CSV structural validator, and [alimanfoo/csvvalidator](https://github.com/alimanfoo/csvvalidator), whose README says it is no longer maintained and points users to petl. They are not preferred implementation bases.
 
