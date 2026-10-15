@@ -80,7 +80,7 @@ DURATION_LONG_SESSION_S = 8 * 3600
 
 
 # ----------------------------------------------------------------------
-# STAGE 1 — LOAD
+# STAGE 1: LOAD
 # ----------------------------------------------------------------------
 
 # Explicit aliases for the current Tetun-language Kobo export. These map known
@@ -187,7 +187,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------
-# STAGE 2 — STANDARDIZE
+# STAGE 2: STANDARDIZE
 # ----------------------------------------------------------------------
 
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
@@ -229,7 +229,7 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
-# STAGE 3 — VALIDATE
+# STAGE 3: VALIDATE
 # ----------------------------------------------------------------------
 
 def _new_issue(idx, uuid, category, field, severity, message):
@@ -258,19 +258,19 @@ def validate_gps(df):
         if pd.notna(prec):
             if prec >= GPS_PRECISION_ERROR_M:
                 issues.append(_new_issue(i, uid, "gps", "_Local GPS_precision", "error",
-                                          f"GPS precision {prec:.1f}m — unusable, record location manually"))
+                                          f"GPS precision {prec:.1f} m: unusable; record location manually"))
             elif prec >= GPS_PRECISION_WARN_M:
                 issues.append(_new_issue(i, uid, "gps", "_Local GPS_precision", "warning",
-                                          f"GPS precision {prec:.1f}m — below recommended accuracy"))
+                                          f"GPS precision {prec:.1f} m: below recommended accuracy"))
         dist = _haversine_m(*SITE_CENTROID, lat, lon)
         if dist > SITE_RADIUS_M:
             issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
-                                      f"{dist:.0f}m from survey site centroid — outside project boundary"))
+                                      f"{dist:.0f} m from the survey site centroid; review coordinates, CRS, and site assignment. This centroid-distance check does not test polygon containment."))
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
         issues.append(_new_issue(i, r["_uuid"], "gps", "_Local GPS", "warning",
-                                  "Coordinates identical to another record — check GPS was refreshed between quadrats"))
+                                  "Coordinates are identical to another record; check whether GPS was refreshed between quadrats."))
     return issues
 
 
@@ -368,10 +368,10 @@ def validate_timestamps(df):
                                       "End time is before or equal to start time"))
         elif dur < DURATION_TOO_FAST_S:
             issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
-                                      f"Survey completed in {dur:.0f}s — unusually fast, check for auto-fill"))
+                                      f"Survey completed in {dur:.0f} s: unusually fast; check for auto-fill."))
         elif dur > DURATION_LONG_SESSION_S:
             issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
-                                      f"Session lasted {dur/3600:.1f}h — form likely left open/resumed later"))
+                                      f"Session lasted {dur/3600:.1f} h: the form may have been left open or resumed later."))
     return issues
 
 
@@ -394,13 +394,13 @@ def validate_duplicate_submissions(df):
     dup = df.duplicated(subset=["_uuid"], keep=False)
     for i, r in df[dup].iterrows():
         issues.append(_new_issue(i, r["_uuid"], "duplicate", "_uuid", "error",
-                                  "Duplicate _uuid — same submission ingested twice"))
+                                  "Duplicate _uuid: the same submission may have been ingested twice."))
     logical_key = ["Collector Name", "Transect Number", "Quadrat Number", "Date and time"]
     if all(k in df.columns for k in logical_key):
         dup2 = df.duplicated(subset=logical_key, keep=False)
         for i, r in df[dup2].iterrows():
             issues.append(_new_issue(i, r["_uuid"], "duplicate", "combo", "warning",
-                                      "Same collector/transect/quadrat/date as another record — possible re-entry"))
+                                      "Same collector, transect, quadrat, and date as another record: possible re-entry."))
     return issues
 
 
@@ -453,7 +453,7 @@ def validate(df) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
-# STAGE 4 — ADD QA COLUMNS TO RAW DATA
+# STAGE 4: ADD QA COLUMNS TO RAW DATA
 # ----------------------------------------------------------------------
 
 def add_qa_columns(df, issues):
@@ -555,7 +555,7 @@ def add_qa_columns(df, issues):
 
 
 # ----------------------------------------------------------------------
-# STAGE 5 — CORRECT
+# STAGE 5: CORRECT
 # ----------------------------------------------------------------------
 
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
@@ -651,7 +651,7 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------
-# STAGE 6 — QA REPORT
+# STAGE 6: QA REPORT
 # ----------------------------------------------------------------------
 
 def generate_qa_report(df, issues, correction_log, out_path):
@@ -665,7 +665,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
     passed = total - flagged_records
 
     lines = []
-    lines.append(f"# M4S Field Data QA Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"# M4S Field Data QA Report: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
     lines.append("## Summary\n")
     lines.append(f"- Total records: **{total}**")
     lines.append(f"- Clean (no issues): **{passed}**")
@@ -1033,7 +1033,7 @@ def findings_summary(findings: pd.DataFrame) -> dict[str, int]:
 
 
 def render_generic_csv_checker():
-    st.title("🧭 Generic Kobo CSV Quality Checker")
+    st.title("Generic Kobo CSV Quality Checker")
     st.caption("General-purpose CSV screening. Uploads are processed by the server running this app; use a local deployment for sensitive data unless hosting protections have been reviewed.")
     with st.expander("What this checks"):
         st.markdown("""
@@ -1100,35 +1100,71 @@ def render_generic_csv_checker():
     st.download_button("Download unchanged input CSV", data=data, file_name=uploaded_csv.name, mime="text/csv")
 
 
-st.set_page_config(page_title="M4S Field Data QA Checker", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
 mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV quality checker"])
 if mode == "Generic CSV quality checker":
     render_generic_csv_checker()
 else:
-    st.title("🌿 M4S Field Data QA Checker")
+    st.title("M4S Field Data QA Checker")
     st.caption("Upload the raw Kobo export (.xlsx). The file is processed by the server running this app. Use a local deployment for sensitive field data unless the host's access controls and data-protection arrangements have been reviewed.")
     
     uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
     
     if uploaded is None:
-        st.info("📤 Upload a file to run the pipeline.")
+        st.info("Upload an XLSX file to run the QA pipeline.")
         st.stop()
     
-    # ---- run the pipeline ----
+    # Run each stage separately so failures stop the workflow without exposing a traceback.
     with st.spinner("Running QA pipeline..."):
         try:
             raw_df, df = load_data(uploaded)
-        except ValueError as e:
-            st.error(f"❌ Error loading data: {str(e)}")
+        except ValueError as exc:
+            st.error(f"Could not load the uploaded XLSX file: {exc}")
             st.stop()
-    
-        df = standardize(df)
-        issues = validate(df)
-        
-        # Add QA columns to the raw data
-        raw_with_qa = add_qa_columns(raw_df, issues)
-        
-        clean_df, correction_log = correct(df)
+        except Exception:
+            st.error(
+                "The uploaded XLSX file could not be loaded. Check that it is a valid Kobo export, "
+                "then retry. If the problem persists, report the load stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            df = standardize(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete during data standardization. No results are available. "
+                "Check that the export matches the expected survey schema, then retry. "
+                "If the problem persists, report the standardization stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            issues = validate(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete during validation. No results are available. Retry the workflow. "
+                "If the problem persists, report the validation stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            raw_with_qa = add_qa_columns(raw_df, issues)
+        except Exception:
+            st.error(
+                "M4S QA could not prepare row-level QA flags. No results are available. Retry the workflow. "
+                "If the problem persists, report the QA-flag stage without sharing survey data."
+            )
+            st.stop()
+
+        try:
+            clean_df, correction_log = correct(df)
+        except Exception:
+            st.error(
+                "M4S QA could not complete the correction stage. No results are available. "
+                "The uploaded source file is not changed. Retry the workflow; if the problem persists, "
+                "report the correction stage without sharing survey data."
+            )
+            st.stop()
     
     # ---- summary metrics ----
     total = len(clean_df)
@@ -1138,16 +1174,16 @@ else:
     
     st.divider()
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("📊 Total records", total)
-    col2.metric("✅ Clean records", total - flagged)
-    col3.metric("❌ Errors", int(errors), help="Must be fixed before analysis")
-    col4.metric("⚠️ Warnings", int(warnings), help="Review and decide if action needed")
-    col5.metric("🔧 Corrections applied", len(correction_log))
+    col1.metric("Total records", total)
+    col2.metric("Rows without flagged issues", total - flagged, help="No enabled QA flag was recorded for these rows. This is not a guarantee that the data is error-free.")
+    col3.metric("Errors", int(errors), help="Review these findings before analysis.")
+    col4.metric("Warnings", int(warnings), help="Review and decide whether action is needed.")
+    col5.metric("Corrections applied", len(correction_log))
     
     st.divider()
     
     # ---- QA COLUMNS OVERVIEW ----
-    st.subheader("🔍 QA Columns — Quick Issue Identification")
+    st.subheader("QA flags and messages")
     st.markdown("""
     The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
     The Message column provides detailed descriptions of all issues for each row.
@@ -1172,16 +1208,16 @@ else:
         cols = st.columns(len(qa_summary))
         for i, (name, count) in enumerate(qa_summary.items()):
             if count > 0:
-                cols[i].metric(f"⚠️ {name}", count, delta=None)
+                cols[i].metric(name, count, delta=None)
             else:
-                cols[i].metric(f"✅ {name}", 0, delta=None)
+                cols[i].metric(name, 0, delta=None)
     else:
-        st.success("🎉 No QA flags triggered! All data looks clean.")
+        st.success("No flags were triggered by the summary checks shown here. This does not certify the dataset as error-free; review the enabled checks and survey protocol.")
     
     st.divider()
     
     # ---- FILTERABLE DATA VIEW ----
-    st.subheader("📊 Filter Raw Data by QA Flags")
+    st.subheader("Filter raw data by QA flags")
     
     # Show the raw data with QA columns
     display_df = raw_with_qa.copy()
@@ -1244,19 +1280,19 @@ else:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
-            "📥 Download Raw Data with QA Flags & Messages",
+            "Download raw data with QA flags and messages",
             raw_with_qa.to_csv(index=False),
             file_name="raw_with_qa_flags.csv"
         )
     with col2:
         st.download_button(
-            "📥 Download QA Issues List",
+            "Download QA issues list",
             issues.to_csv(index=False),
             file_name="qa_issues.csv"
         )
     with col3:
         st.download_button(
-            "📥 Download Filtered View",
+            "Download filtered view",
             display_df.to_csv(index=False),
             file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         )
@@ -1265,7 +1301,7 @@ else:
     
     # ---- ORIGINAL TABS ----
     tab_report, tab_issues, tab_corrections, tab_clean = st.tabs(
-        ["📋 QA Report", "📊 Issue List", "🔧 Correction Log", "✨ Clean Dataset"]
+        ["QA report", "Issue list", "Correction log", "Clean dataset"]
     )
     
     with tab_report:
@@ -1275,12 +1311,12 @@ else:
             generate_qa_report(clean_df, issues, correction_log, report_path)
             report_text = report_path.read_text(encoding="utf-8")
         st.markdown(report_text)
-        st.download_button("📥 Download qa_report.md", report_text, file_name="qa_report.md")
+        st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
     
     with tab_issues:
         st.dataframe(issues, width='stretch')
         st.download_button(
-            "📥 Download qa_issues.csv",
+            "Download QA issues CSV",
             issues.to_csv(index=False),
             file_name="qa_issues.csv"
         )
@@ -1288,7 +1324,7 @@ else:
     with tab_corrections:
         st.dataframe(correction_log, width='stretch')
         st.download_button(
-            "📥 Download correction_log.csv",
+            "Download correction log CSV",
             correction_log.to_csv(index=False),
             file_name="correction_log.csv"
         )
@@ -1296,13 +1332,13 @@ else:
     with tab_clean:
         st.dataframe(clean_df, width='stretch')
         st.download_button(
-            "📥 Download clean_dataset.csv",
+            "Download clean dataset CSV",
             clean_df.to_csv(index=False),
             file_name="clean_dataset.csv"
         )
     
     # ---- QUICK REFERENCE ----
-    with st.expander("📖 QA Column Reference"):
+    with st.expander("QA column reference"):
         st.markdown("""
         ### QA Flag Columns Explained
         
@@ -1328,4 +1364,4 @@ else:
         6. **Use the Message column** as a checklist during data cleaning
         """)
     
-    st.caption(f"📁 Dataset: {uploaded.name} | 📊 Records: {total} | ⚠️ Issues: {len(issues)} | 🔧 Corrections: {len(correction_log)}")
+    st.caption(f"Dataset: {uploaded.name} | Records: {total} | Findings: {len(issues)} | Corrections: {len(correction_log)}")

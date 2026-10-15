@@ -61,7 +61,7 @@ DURATION_LONG_SESSION_S = 8 * 3600
 
 
 # ----------------------------------------------------------------------
-# STAGE 1 — LOAD
+# STAGE 1: LOAD
 # ----------------------------------------------------------------------
 
 # Explicit aliases for the current Tetun-language Kobo export. These map known
@@ -168,7 +168,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------
-# STAGE 2 — STANDARDIZE
+# STAGE 2: STANDARDIZE
 # ----------------------------------------------------------------------
 
 def _strip_all_strings(df: pd.DataFrame) -> pd.DataFrame:
@@ -210,7 +210,7 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
-# STAGE 3 — VALIDATE
+# STAGE 3: VALIDATE
 # ----------------------------------------------------------------------
 
 def _new_issue(idx, uuid, category, field, severity, message):
@@ -239,19 +239,19 @@ def validate_gps(df):
         if pd.notna(prec):
             if prec >= GPS_PRECISION_ERROR_M:
                 issues.append(_new_issue(i, uid, "gps", "_Local GPS_precision", "error",
-                                          f"GPS precision {prec:.1f}m — unusable, record location manually"))
+                                          f"GPS precision {prec:.1f} m: unusable; record location manually"))
             elif prec >= GPS_PRECISION_WARN_M:
                 issues.append(_new_issue(i, uid, "gps", "_Local GPS_precision", "warning",
-                                          f"GPS precision {prec:.1f}m — below recommended accuracy"))
+                                          f"GPS precision {prec:.1f} m: below recommended accuracy"))
         dist = _haversine_m(*SITE_CENTROID, lat, lon)
         if dist > SITE_RADIUS_M:
             issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
-                                      f"{dist:.0f}m from survey site centroid — outside project boundary"))
+                                      f"{dist:.0f} m from the survey site centroid; review coordinates, CRS, and site assignment. This centroid-distance check does not test polygon containment."))
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
         issues.append(_new_issue(i, r["_uuid"], "gps", "_Local GPS", "warning",
-                                  "Coordinates identical to another record — check GPS was refreshed between quadrats"))
+                                  "Coordinates are identical to another record; check whether GPS was refreshed between quadrats."))
     return issues
 
 
@@ -349,10 +349,10 @@ def validate_timestamps(df):
                                       "End time is before or equal to start time"))
         elif dur < DURATION_TOO_FAST_S:
             issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
-                                      f"Survey completed in {dur:.0f}s — unusually fast, check for auto-fill"))
+                                      f"Survey completed in {dur:.0f} s: unusually fast; check for auto-fill."))
         elif dur > DURATION_LONG_SESSION_S:
             issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
-                                      f"Session lasted {dur/3600:.1f}h — form likely left open/resumed later"))
+                                      f"Session lasted {dur/3600:.1f} h: the form may have been left open or resumed later."))
     return issues
 
 
@@ -375,13 +375,13 @@ def validate_duplicate_submissions(df):
     dup = df.duplicated(subset=["_uuid"], keep=False)
     for i, r in df[dup].iterrows():
         issues.append(_new_issue(i, r["_uuid"], "duplicate", "_uuid", "error",
-                                  "Duplicate _uuid — same submission ingested twice"))
+                                  "Duplicate _uuid: the same submission may have been ingested twice."))
     logical_key = ["Collector Name", "Transect Number", "Quadrat Number", "Date and time"]
     if all(k in df.columns for k in logical_key):
         dup2 = df.duplicated(subset=logical_key, keep=False)
         for i, r in df[dup2].iterrows():
             issues.append(_new_issue(i, r["_uuid"], "duplicate", "combo", "warning",
-                                      "Same collector/transect/quadrat/date as another record — possible re-entry"))
+                                      "Same collector, transect, quadrat, and date as another record: possible re-entry."))
     return issues
 
 
@@ -434,7 +434,7 @@ def validate(df) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
-# STAGE 4 — ADD QA COLUMNS TO RAW DATA
+# STAGE 4: ADD QA COLUMNS TO RAW DATA
 # ----------------------------------------------------------------------
 
 def add_qa_columns(df, issues):
@@ -536,7 +536,7 @@ def add_qa_columns(df, issues):
 
 
 # ----------------------------------------------------------------------
-# STAGE 5 — CORRECT
+# STAGE 5: CORRECT
 # ----------------------------------------------------------------------
 
 def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, dict]:
@@ -632,7 +632,7 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------
-# STAGE 6 — QA REPORT
+# STAGE 6: QA REPORT
 # ----------------------------------------------------------------------
 
 def generate_qa_report(df, issues, correction_log, out_path):
@@ -646,7 +646,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
     passed = total - flagged_records
 
     lines = []
-    lines.append(f"# M4S Field Data QA Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"# M4S Field Data QA Report: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
     lines.append("## Summary\n")
     lines.append(f"- Total records: **{total}**")
     lines.append(f"- Clean (no issues): **{passed}**")
@@ -680,7 +680,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
 
 
 # ----------------------------------------------------------------------
-# STAGE 7 — EXPORT
+# STAGE 7: EXPORT
 # ----------------------------------------------------------------------
 
 def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):

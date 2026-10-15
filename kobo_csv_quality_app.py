@@ -7,8 +7,8 @@ import streamlit as st
 
 from kobo_csv_quality import QualityCheckError, findings_summary, read_csv_bytes, run_quality_checks
 
-st.set_page_config(page_title="Kobo CSV Quality Checker", page_icon="🧭", layout="wide")
-st.title("🧭 Kobo CSV Quality Checker")
+st.set_page_config(page_title="Kobo CSV Quality Checker", layout="wide")
+st.title("Kobo CSV Quality Checker")
 st.caption("Run locally to keep survey files on your machine. If hosted, uploads are processed by that server; review its data-protection setup before use.")
 
 with st.expander("What this checks"):
