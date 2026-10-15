@@ -50,7 +50,7 @@ Generic checks are screening aids, not a replacement for the survey's XLSForm. A
 pytest -q
 ```
 
-See [docs/SPEC.md](docs/SPEC.md) and [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md).
+See [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), and the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md) for the validation flow, failure boundaries, and bounded development/verification loop.
 
 ## License
 
