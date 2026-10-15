@@ -1,6 +1,7 @@
 """Local-first, generic CSV quality checks for KoboToolbox exports."""
 from __future__ import annotations
 
+import csv
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -20,14 +21,21 @@ def read_csv_bytes(data: bytes, *, encoding: str = "utf-8-sig") -> pd.DataFrame:
     if not data:
         raise ValueError("The uploaded CSV is empty.")
     try:
+        text = data.decode(encoding)
+        header = next(csv.reader(text.splitlines()), [])
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Could not decode this CSV as {encoding}: {exc}") from exc
+    if not header:
+        raise ValueError("The CSV has no columns.")
+    if len(set(header)) != len(header):
+        duplicates = sorted({name for name in header if header.count(name) > 1})
+        raise ValueError(f"Duplicate column names: {duplicates}")
+    try:
         frame = pd.read_csv(BytesIO(data), encoding=encoding, dtype="string", keep_default_na=False)
-    except (UnicodeDecodeError, pd.errors.ParserError) as exc:
+    except (UnicodeDecodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         raise ValueError(f"Could not parse this CSV: {exc}") from exc
     if len(frame.columns) == 0:
         raise ValueError("The CSV has no columns.")
-    if frame.columns.duplicated().any():
-        duplicates = frame.columns[frame.columns.duplicated()].tolist()
-        raise ValueError(f"Duplicate column names: {duplicates}")
     return frame
 
 
@@ -56,7 +64,6 @@ def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
                 "structure", "error",
                 str(error.get("message") or error.get("type") or "CSV structure error"),
             ))
-    # Some Frictionless versions expose top-level errors instead of task errors.
     for error in payload.get("errors", []):
         issues.append(_issue(
             error.get("rowNumber", error.get("row_number", "")),
@@ -91,8 +98,6 @@ def validate_dataframe(
                 issues.append(_issue(position, "", "duplicate", "warning",
                                      "Entire row duplicates another row in this file."))
 
-    # Pandera provides a schema-validation stage. In generic mode we validate
-    # column presence/shape without guessing domain-specific types or ranges.
     schema = pa.DataFrameSchema(
         {str(column): pa.Column(nullable=True, required=False) for column in df.columns},
         strict=False,
@@ -112,7 +117,6 @@ def validate_dataframe(
         for column in df.columns:
             values = pd.to_numeric(df[column].astype("string").str.strip(), errors="coerce")
             valid = values.dropna()
-            # Avoid misleading outlier alerts on tiny or near-constant columns.
             if len(valid) < 8 or valid.nunique() < 4:
                 continue
             q1, q3 = valid.quantile([0.25, 0.75])
@@ -132,9 +136,11 @@ def findings_summary(findings: pd.DataFrame) -> dict[str, int]:
     """Return stable summary counts for the app and tests."""
     if findings.empty:
         return {"findings": 0, "errors": 0, "warnings": 0, "affected_rows": 0}
+    row_values = findings["row_number"].astype("string")
+    has_row = row_values.notna() & (row_values != "")
     return {
         "findings": int(len(findings)),
         "errors": int((findings["severity"] == "error").sum()),
         "warnings": int((findings["severity"] == "warning").sum()),
-        "affected_rows": int(findings.loc[findings["row_number"] != "", "row_number"].nunique()),
+        "affected_rows": int(row_values[has_row].nunique()),
     }
