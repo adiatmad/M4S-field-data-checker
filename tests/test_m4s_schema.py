@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 
-from m4s_seagrass_qa import _canonicalize_form_columns, load_data
+from m4s_seagrass_qa import (
+    _canonicalize_form_columns,
+    generate_qa_report,
+    load_data,
+    standardize,
+    validate,
+)
 
 
 def tetun_export_frame():
@@ -90,3 +96,62 @@ def test_load_data_still_rejects_missing_required_fields(tmp_path):
 
     assert "Collector Name" in str(exc.value)
     assert "Available headers" in str(exc.value)
+
+
+
+def test_load_data_rejects_missing_m4s_required_columns(tmp_path):
+    path = tmp_path / "missing_quadrat_fields.xlsx"
+    source = tetun_export_frame().drop(columns=["Numeru Quadrante"])
+    source.to_excel(path, index=False)
+
+    with pytest.raises(ValueError, match="Unsupported Kobo form schema") as exc:
+        load_data(str(path))
+
+    assert "Quadrat Number" in str(exc.value)
+
+
+def test_mandatory_fields_flag_whitespace_only_values():
+    frame = _canonicalize_form_columns(tetun_export_frame())
+    frame.loc[0, "Numeru Quadrante"] = "   "
+    frame.loc[0, "Naran Koletor"] = "  "
+    standardized = standardize(frame)
+
+    issues = validate(standardized)
+    missing = issues[(issues["category"] == "logic") & (issues["severity"] == "error")]
+
+    assert "Collector Name" in set(missing["field"])
+    assert "Quadrat Number" in set(missing["field"])
+
+
+def test_invalid_nonblank_numeric_values_are_reported():
+    frame = _canonicalize_form_columns(tetun_export_frame())
+    frame.loc[0, "Persentajen Kober Alga (%)"] = "not-a-number"
+    standardized = standardize(frame)
+
+    issues = validate(standardized)
+    invalid = issues[issues["category"] == "numeric"]
+
+    assert len(invalid) == 1
+    assert invalid.iloc[0]["field"] == "Percentage of Algal Cover (%)"
+    assert "not-a-number" in invalid.iloc[0]["message"]
+
+
+def test_clean_dataset_generates_report_with_zero_issues(tmp_path):
+    frame = _canonicalize_form_columns(tetun_export_frame())
+    standardized = standardize(frame)
+    issues = validate(standardized)
+
+    # The fixture intentionally has a coverage value that is otherwise valid and
+    # a species percentage matching epicover; the validation pipeline must be stable.
+    assert list(issues.columns) == [
+        "row_index", "uuid", "category", "field", "severity", "message"
+    ]
+    assert issues.empty
+
+    report_path = tmp_path / "qa_report.md"
+    generate_qa_report(standardized, issues, pd.DataFrame(), report_path)
+
+    report = report_path.read_text(encoding="utf-8")
+    assert "Clean (no issues): **1**" in report
+    assert "Errors: **0**" in report
+    assert "No issues found." in report
