@@ -77,6 +77,47 @@ def structural_issues(data: bytes, filename: str = "upload.csv") -> list[dict]:
     return issues
 
 
+
+class QualityCheckError(RuntimeError):
+    """A validation stage failed; no partial result should be presented as complete."""
+
+    def __init__(self, stage: str):
+        self.stage = stage
+        super().__init__(f"Quality checks failed during {stage}.")
+
+
+def run_quality_checks(
+    data: bytes,
+    filename: str,
+    df: pd.DataFrame,
+    *,
+    missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
+    duplicate_rows: bool = True,
+    outlier_checks: bool = True,
+) -> pd.DataFrame:
+    """Run all enabled stages or raise a stage-labelled error; never return partial findings."""
+    try:
+        structure = structural_issues(data, filename)
+    except Exception as exc:
+        raise QualityCheckError("structural validation") from exc
+
+    try:
+        values = validate_dataframe(
+            df,
+            missing_tokens=missing_tokens,
+            duplicate_rows=duplicate_rows,
+            outlier_checks=outlier_checks,
+        )
+    except Exception as exc:
+        raise QualityCheckError("value validation") from exc
+
+    if not structure:
+        return values
+
+    structural_frame = pd.DataFrame(structure, columns=ISSUE_COLUMNS)
+    return pd.concat([structural_frame, values], ignore_index=True)[ISSUE_COLUMNS]
+
+
 def validate_dataframe(
     df: pd.DataFrame,
     *,

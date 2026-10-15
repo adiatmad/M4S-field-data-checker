@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from kobo_csv_quality import findings_summary, read_csv_bytes, structural_issues, validate_dataframe
+from kobo_csv_quality import QualityCheckError, findings_summary, read_csv_bytes, run_quality_checks
 
 st.set_page_config(page_title="Kobo CSV Quality Checker", page_icon="🧭", layout="wide")
 st.title("🧭 Kobo CSV Quality Checker")
@@ -33,17 +33,22 @@ if uploaded is not None:
         st.error(str(exc))
         st.stop()
 
-    with st.spinner("Checking CSV structure and values…"):
-        structure = structural_issues(data, uploaded.name)
-        tokens = tuple(token.strip() for token in missing_text.split(","))
-        findings = validate_dataframe(
-            frame, missing_tokens=tokens,
-            duplicate_rows=check_duplicates, outlier_checks=check_outliers,
+    tokens = tuple(token.strip() for token in missing_text.split(","))
+    try:
+        with st.spinner("Checking CSV structure and values…"):
+            findings = run_quality_checks(
+                data, uploaded.name, frame,
+                missing_tokens=tokens,
+                duplicate_rows=check_duplicates,
+                outlier_checks=check_outliers,
+            )
+    except QualityCheckError as exc:
+        st.error(
+            f"Quality checks could not complete during {exc.stage}. "
+            "No partial results are shown. Please retry with the same file; "
+            "if the problem persists, report the failure without sharing sensitive survey data."
         )
-        if structure:
-            import pandas as pd
-            findings = pd.concat([pd.DataFrame(structure), findings], ignore_index=True)
-            findings = findings[["row_number", "column", "category", "severity", "message"]]
+        st.stop()
 
     summary = findings_summary(findings)
     a, b, c, d = st.columns(4)
