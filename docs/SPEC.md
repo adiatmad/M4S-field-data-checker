@@ -11,6 +11,7 @@ Field coordinators, data managers, and survey teams who need actionable flags be
 - Run Frictionless resource/CSV structure validation.
 - Run Pandera dataframe schema validation without inventing domain-specific constraints.
 - Flag configurable missing-value tokens, exact duplicate rows, and optional numeric IQR outliers.
+- Accept an optional, user-authored JSON contract for required columns, allowed values, numeric/date/boolean checks, numeric bounds, and composite unique keys; never infer domain rules.
 - Show finding category, severity, row number, column, and explanation.
 - Export findings as CSV and allow download of the unchanged input.
 - Keep survey content out of external services; no telemetry or AI processing.
@@ -28,3 +29,22 @@ Field coordinators, data managers, and survey teams who need actionable flags be
 4. Findings include a usable row reference and column where applicable.
 5. Automated tests cover parsing, missing values, duplicates, and empty summaries.
 6. Existing M4S-specific app and CLI remain available.
+
+
+## Optional CSV contract
+
+Upload a JSON contract alongside the CSV to enforce explicit rules. Example:
+
+```json
+{
+  "required_columns": ["record_id", "consent"],
+  "key_columns": ["record_id"],
+  "columns": {
+    "age": {"type": "integer", "min": 0, "max": 120},
+    "consent": {"allowed_values": ["yes", "no"]},
+    "visit_date": {"type": "date"}
+  }
+}
+```
+
+Supported types are `string`, `number`, `integer`, `date`, and `boolean`. Empty cells are not type-checked by this contract; configure required columns for schema presence, and use the missing-value checks to find empty cells. This first version does not implement conditional requirements, skip logic, or XLSForm repeat-group semantics. Contract errors are flags for review, not automatic edits.
