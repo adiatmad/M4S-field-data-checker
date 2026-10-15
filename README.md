@@ -1,45 +1,57 @@
 # M4S Field Data QA Checker
 
-A Streamlit application and command-line pipeline for quality assurance of M4S seagrass field data exported from Kobo.
+A Streamlit application and command-line pipeline for quality assurance of M4S seagrass field data exported from KoboToolbox, with an additional generic CSV quality checker for other survey exports.
 
-## What it does
+## Choose your workflow
 
-The project provides two entry points:
+### Generic raw Kobo CSV checker (new)
 
-- `m4s_app.py` — Streamlit interface for uploading a raw Kobo XLSX export, reviewing QA flags, filtering records, and downloading QA outputs.
-- `m4s_seagrass_qa.py` — command-line QA pipeline for processing a Kobo XLSX export.
+Use this when you have a CSV export and want general quality flags without assuming a particular survey form.
 
-The QA pipeline checks areas including GPS data, seagrass species logic, percentage fields, mandatory fields, timestamps, photos, duplicate submissions, and coverage mismatches. It also applies defined safe corrections and records those changes in a correction log.
+- `kobo_csv_quality_app.py` — Streamlit interface for CSV uploads, structure checks, missing values, exact duplicates, and optional numeric outlier screening.
+- `kobo_csv_quality.py` — reusable validation functions powered by Frictionless and Pandera.
 
-## Requirements
-
-Python 3 and the packages listed in `requirements.txt`.
-
-## Streamlit app
+Run locally:
 
 ```bash
-pip install -r requirements.txt
-streamlit run m4s_app.py
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+streamlit run kobo_csv_quality_app.py
 ```
 
-Upload the raw Kobo XLSX export in the browser.
+The app reports findings with category, severity, row reference, column, and message, and lets you download findings as CSV. It preserves CSV values as strings so identifiers such as `0012` are not silently converted to `12`.
 
-## Command line
+### M4S seagrass XLSX workflow (existing)
+
+- `m4s_app.py` — Streamlit interface for the M4S Kobo XLSX export, with M4S-specific rules.
+- `m4s_seagrass_qa.py` — command-line M4S QA pipeline.
 
 ```bash
+python -m pip install -r requirements.txt
+streamlit run m4s_app.py
 python3 m4s_seagrass_qa.py <raw_kobo_export.xlsx> [output_dir]
 ```
 
-The pipeline writes QA flags, the cleaned dataset, issue and correction CSVs, and a Markdown QA report to the output directory.
+The M4S-specific pipeline checks GPS, seagrass species logic, percentage fields, mandatory fields, timestamps, photos, duplicates, and coverage mismatches. Its domain assumptions (including site coordinates and expected columns) are specific to that project; review them before applying to another survey.
 
-## Data handling
+## Privacy
 
-The Streamlit interface states that uploaded data is processed within the session and provides outputs for download rather than saving them to a server.
+The generic checker runs in the Streamlit process and does not intentionally send survey data to an external API. For sensitive data, run it locally and avoid deploying it to a public or shared server without appropriate access controls. Do not commit real survey exports, credentials, or personally identifiable information.
+
+## Limitations
+
+Generic checks are screening aids, not a replacement for the survey's XLSForm. A full check of required fields, constraints, skip logic, choices, and repeat groups requires the relevant form/schema. Outlier flags are not automatic errors and source data is never automatically corrected by the generic checker.
+
+## Tests
+
+```bash
+pytest -q
+```
+
+See [docs/SPEC.md](docs/SPEC.md) and [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md).
 
 ## License
 
-See [LICENSE](LICENSE).
-
-## AI-Assisted Development
-
-This project was developed and/or maintained with AI assistance. AI was used to support parts of the design, implementation, documentation, and/or maintenance workflow. The human maintainer remains responsible for reviewing, validating, and approving the project's code and outputs.
+See [LICENSE](LICENSE). The existing repository license is AGPL-3.0.

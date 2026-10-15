@@ -1,0 +1,19 @@
+name: Generic CSV checker tests
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q kobo_csv_quality.py kobo_csv_quality_app.py m4s_seagrass_qa.py m4s_app.py
+      - run: python -m pytest -q

@@ -5,3 +5,6 @@ rapidfuzz
 openpyxl
 tabulate
 plotly
+frictionless
+pandera[pandas]
+pytest
