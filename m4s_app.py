@@ -18,23 +18,7 @@ from rapidfuzz import fuzz, process
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
 
-"""
-M4S Field Data QA Checker
-=========================
-Turns a raw KoboToolbox export into an analysis-ready dataset with QA flags.
-
-Pipeline stages:
-    1. load_data          -> read the raw .xlsx, keep an untouched copy
-    2. standardize         -> parse dates, trim whitespace, fix dtypes
-    3. validate             -> run every QA rule, collect issues
-    4. add_qa_columns      -> add QA flag columns + Message column to raw data
-    5. correct               -> apply ONLY the safe, reversible corrections
-    6. generate_qa_report -> one Markdown report summarizing everything
-    7. export_outputs      -> write clean dataset + correction log + raw copy with QA flags
-
-Run directly:  python3 m4s_seagrass_qa.py raw_export.xlsx
-Outputs land in ./output/
-"""
+# M4S Streamlit entry point; see README.md for user instructions.
 
 import re
 import unicodedata
@@ -677,11 +661,7 @@ def generate_qa_report(df, issues, correction_log, out_path):
 
 # Generic CSV contract validation and reusable checks are embedded below.
 
-"""Explicit, user-authored contracts for generic CSV quality checks.
 
-The contract is deliberately declarative: it validates only rules supplied by the
-survey owner and never infers ecological or survey semantics.
-"""
 
 import pandas as pd
 import numpy as np
@@ -809,7 +789,7 @@ def validate_contract(df: pd.DataFrame, contract: dict) -> pd.DataFrame:
 
     return pd.DataFrame(issues, columns=ISSUE_COLUMNS)
 
-"""Local-first, generic CSV quality checks for KoboToolbox exports."""
+# Local-first, generic CSV quality checks for KoboToolbox exports.
 
 import csv
 from io import BytesIO
@@ -1080,13 +1060,13 @@ mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV qu
 if mode == "Generic CSV quality checker":
     render_generic_csv_checker()
 else:
-    st.title("M4S Field Data QA Checker")
-    st.caption("Upload the raw Kobo export (.xlsx). The file is processed by the server running this app. Use a local deployment for sensitive field data unless the host's access controls and data-protection arrangements have been reviewed.")
+    st.title("Check your M4S seagrass survey data")
+    st.caption("Upload the Excel file you downloaded from KoboToolbox. The checker will highlight records that may need review. It does not decide every issue automatically, so review the findings before changing your data. For sensitive field data, use only a deployment approved by your team.")
     
-    uploaded = st.file_uploader("Raw Kobo export (.xlsx)", type=["xlsx"])
+    uploaded = st.file_uploader("Choose your KoboToolbox Excel file (.xlsx)", type=["xlsx"], help="Use the Excel export for the M4S seagrass survey. This workflow is not for CSV files or other projects.")
     
     if uploaded is None:
-        st.info("Upload an XLSX file to run the QA pipeline.")
+        st.info("Start by uploading the Excel (.xlsx) file exported from KoboToolbox for the M4S seagrass survey. Your results will appear here after the checks finish.")
         st.stop()
     
     # Run each stage separately so failures stop the workflow without exposing a traceback.
