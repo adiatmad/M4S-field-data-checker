@@ -27,12 +27,14 @@ The app reports findings with category, severity, row reference, column, and mes
 
 ### M4S seagrass XLSX workflow
 
-- `m4s_app.py` — Streamlit interface for the M4S Kobo XLSX export, with M4S-specific rules.
-- `m4s_seagrass_qa.py` — command-line M4S QA pipeline.
+- `m4s_app.py` — single-file Streamlit entry point with two selectable workflows: M4S seagrass XLSX QA and generic Kobo CSV quality checks. The M4S pipeline, generic CSV checks, and optional JSON-contract validation are embedded in this file so the deployed app does not import other project modules at runtime.
+- `m4s_seagrass_qa.py` — separate command-line M4S QA pipeline, retained for local/batch use.
+- `kobo_csv_quality_app.py`, `kobo_csv_quality.py`, and `csv_contract.py` — original generic-checker implementation retained for modular use and automated tests.
 
 ```bash
 python -m pip install -r requirements.txt
 streamlit run m4s_app.py
+# Optional standalone command-line workflow:
 python3 m4s_seagrass_qa.py <raw_kobo_export.xlsx> [output_dir]
 ```
 
@@ -40,7 +42,7 @@ The M4S-specific pipeline checks GPS, seagrass species logic, percentage fields,
 
 ## Privacy
 
-The generic checker runs in the Streamlit process and does not intentionally send survey data to an external API. For sensitive data, run it locally and avoid deploying it to a public or shared server without appropriate access controls. Do not commit real survey exports, credentials, or personally identifiable information.
+Both Streamlit apps process uploaded data in the server process that runs them. Do not assume hosted uploads remain only on your device. For sensitive field data, run the app locally or verify hosting access controls, retention, and data-protection arrangements before use. Do not commit real survey exports, credentials, or personally identifiable information.
 
 ## Limitations
 
