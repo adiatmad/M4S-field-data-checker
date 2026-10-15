@@ -1172,9 +1172,9 @@ else:
         cols = st.columns(len(qa_summary))
         for i, (name, count) in enumerate(qa_summary.items()):
             if count > 0:
-                cols[i].metric(f"⚠️ {name}", count, delta=None)
+                cols[i].metric(name, count, delta=None)
             else:
-                cols[i].metric(f"✅ {name}", 0, delta=None)
+                cols[i].metric(name, 0, delta=None)
     else:
         st.success("No flags were triggered by the summary checks shown here. This does not certify the dataset as error-free; review the enabled checks and survey protocol.")
     
