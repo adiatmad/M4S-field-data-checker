@@ -83,13 +83,25 @@ BASE_COLUMN_ALIASES = {
     "Foto Quadrante_URL": "Quadrat Photo_URL",
 }
 
+def _normalize_header(value) -> str:
+    """Normalize whitespace and Unicode for alias lookup without rewriting source headers."""
+    if not isinstance(value, str):
+        return value
+    return re.sub(r"\\s+", " ", unicodedata.normalize("NFKC", value)).strip()
+
+
 def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Map explicitly supported Tetun Kobo labels to the pipeline's canonical names."""
+    """Map explicitly supported Tetun Kobo labels to canonical names.
+
+    Header normalization is used only for lookup; unknown source headers remain unchanged.
+    """
     df = df.copy()
     aliases = dict(BASE_COLUMN_ALIASES)
     species_prefix = "Espesie du'ut tasi (seagrass) ne'ebe prezensa iha Quadrante/"
     for species in SPECIES_LIST:
         aliases[f"{species_prefix}{species}"] = f"Seagrass species present in the Quadrat/{species}"
+    # Kobo/Excel exports can add leading, trailing, or repeated whitespace to labels.
+    aliases = {_normalize_header(source): target for source, target in aliases.items()}
 
     # Select the first known percentage column for each species. Some exports include
     # older/typo variants as extra columns; leave those untouched rather than merging data.
@@ -111,7 +123,7 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
     }
     for species, candidates in percentage_candidates.items():
         for candidate in candidates:
-            aliases[candidate] = f"Percent {species} (%)"
+            aliases[_normalize_header(candidate)] = f"Percent {species} (%)"
 
     # Only rename when the canonical target is absent. If both are present, preserve
     # both columns and avoid silently overwriting one source field with another.
@@ -119,7 +131,7 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
     existing = set(df.columns)
     claimed_targets = set(existing)
     for source in df.columns:
-        target = aliases.get(source)
+        target = aliases.get(_normalize_header(source))
         if target and target not in claimed_targets:
             rename[source] = target
             claimed_targets.add(target)
