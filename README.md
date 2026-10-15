@@ -27,12 +27,14 @@ The app reports findings with category, severity, row reference, column, and mes
 
 ### M4S seagrass XLSX workflow
 
-- `m4s_app.py` — self-contained Streamlit entry point for the M4S Kobo XLSX export, with the M4S validation pipeline embedded. Deploy this file as the app's main file; it does not import `m4s_seagrass_qa.py` at runtime.
+- `m4s_app.py` — single-file Streamlit entry point with two selectable workflows: M4S seagrass XLSX QA and generic Kobo CSV quality checks. The M4S pipeline, generic CSV checks, and optional JSON-contract validation are embedded in this file so the deployed app does not import other project modules at runtime.
 - `m4s_seagrass_qa.py` — separate command-line M4S QA pipeline, retained for local/batch use.
+- `kobo_csv_quality_app.py`, `kobo_csv_quality.py`, and `csv_contract.py` — original generic-checker implementation retained for modular use and automated tests.
 
 ```bash
 python -m pip install -r requirements.txt
 streamlit run m4s_app.py
+# Optional standalone command-line workflow:
 python3 m4s_seagrass_qa.py <raw_kobo_export.xlsx> [output_dir]
 ```
 
