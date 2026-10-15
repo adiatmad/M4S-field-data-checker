@@ -468,6 +468,10 @@ def add_qa_columns(df, issues):
     if len(issues) > 0:
         for idx, row in issues.iterrows():
             row_idx = row['row_index']
+            # Schema-level findings have no source row; they remain in qa_issues.csv
+            # and must not be written into row-specific flags.
+            if row_idx not in row_messages:
+                continue
             category = row['category']
             field = row['field']
             message = row['message']
