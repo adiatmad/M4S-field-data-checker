@@ -25,8 +25,10 @@ def read_csv_bytes(data: bytes, *, encoding: str = "utf-8-sig") -> pd.DataFrame:
         header = next(csv.reader(text.splitlines()), [])
     except UnicodeDecodeError as exc:
         raise ValueError(f"Could not decode this CSV as {encoding}: {exc}") from exc
-    if not header:
+    if not header or not any(name.strip() for name in header):
         raise ValueError("The CSV has no columns.")
+    if any(not name.strip() for name in header):
+        raise ValueError("CSV column names cannot be blank.")
     if len(set(header)) != len(header):
         duplicates = sorted({name for name in header if header.count(name) > 1})
         raise ValueError(f"Duplicate column names: {duplicates}")
@@ -88,9 +90,10 @@ def validate_dataframe(
     for column in df.columns:
         values = df[column].astype("string")
         missing = values.str.strip().str.casefold().isin(normalized_missing)
-        for idx in df.index[missing]:
-            issues.append(_issue(int(df.index.get_loc(idx)) + 2, column, "missing", "warning",
-                                 "Value is blank or matches a configured missing-value token."))
+        for position, is_missing in enumerate(missing.tolist(), start=2):
+            if is_missing:
+                issues.append(_issue(position, column, "missing", "warning",
+                                     "Value is blank or matches a configured missing-value token."))
 
     if duplicate_rows and not df.empty:
         duplicate_mask = df.astype("string").duplicated(keep=False)
@@ -125,10 +128,12 @@ def validate_dataframe(
             if not np.isfinite(spread) or spread <= 0:
                 continue
             low, high = q1 - 1.5 * spread, q3 + 1.5 * spread
-            for idx in valid.index[(valid < low) | (valid > high)]:
-                issues.append(_issue(int(df.index.get_loc(idx)) + 2, column, "anomaly", "warning",
-                                     f"Numeric value {values.loc[idx]} is outside the IQR screening range "
-                                     f"({low:g} to {high:g}); review, do not auto-correct."))
+            outlier_positions = ((values < low) | (values > high)).fillna(False).tolist()
+            for position, is_outlier in enumerate(outlier_positions, start=2):
+                if is_outlier:
+                    issues.append(_issue(position, column, "anomaly", "warning",
+                                         f"Numeric value {values.iloc[position - 2]} is outside the IQR screening range "
+                                         f"({low:g} to {high:g}); review, do not auto-correct."))
 
     return pd.DataFrame(issues, columns=ISSUE_COLUMNS)
 
