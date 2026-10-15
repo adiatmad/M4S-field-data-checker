@@ -1105,7 +1105,6 @@ mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV qu
 if mode == "Generic CSV quality checker":
     render_generic_csv_checker()
 else:
-    st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
     st.title("🌿 M4S Field Data QA Checker")
     st.caption("Upload the raw Kobo export (.xlsx). The file is processed by the server running this app. Use a local deployment for sensitive field data unless the host's access controls and data-protection arrangements have been reviewed.")
     
