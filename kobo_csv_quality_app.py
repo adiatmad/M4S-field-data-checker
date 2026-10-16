@@ -17,6 +17,7 @@ with st.expander("What this checks"):
     - **Missing values:** blank cells and configurable missing-value tokens.
     - **Duplicates:** exact duplicate rows.
     - **Anomalies:** optional IQR screening for numeric-looking columns.
+    - **Similar text values:** optional review suggestions for likely spelling, spacing, or capitalization variants in categorical columns. Values are never changed automatically.
     - **Schema stage:** Pandera dataframe validation; this generic mode does not guess survey-specific types or business rules.
     - **Optional JSON contract:** explicitly checks required columns, allowed values, types, numeric ranges, and duplicate keys using rules supplied by the survey owner.
 
@@ -27,6 +28,7 @@ uploaded = st.file_uploader("Upload a raw Kobo CSV export", type=["csv"])
 missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null")
 check_duplicates = st.checkbox("Check exact duplicate rows", value=True)
 check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True)
+check_similar_values = st.checkbox("Suggest similar text values for review (no automatic changes)", value=False)
 contract_file = st.file_uploader("Optional validation contract (JSON)", type=["json"])
 contract = None
 if contract_file is not None:
@@ -54,6 +56,7 @@ if uploaded is not None:
                 missing_tokens=tokens,
                 duplicate_rows=check_duplicates,
                 outlier_checks=check_outliers,
+                similar_text_values=check_similar_values,
                 contract=contract,
             )
     except QualityCheckError as exc:
