@@ -18,7 +18,8 @@ Field coordinators, data managers, and survey teams who need actionable flags be
 - Keep survey content out of external services; no telemetry or AI processing.
 
 ## Non-goals
-- No automatic edits to source records.
+- No automatic edits to the uploaded source records.
+- In the M4S Streamlit workflow, heuristic correction suggestions are review-only by default; applying them requires explicit opt-in. The current UI applies accepted suggestions as a batch, not individually.
 - No automatic merging of similar text values; suggestions remain warnings for human review.
 - No assumption that every numeric outlier is an error.
 - No automatic inference of skip logic, repeat groups, or XLSForm constraints in this generic MVP.
