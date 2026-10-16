@@ -1175,41 +1175,10 @@ else:
             st.stop()
 
         try:
-            suggested_df, suggested_log = correct(df)
-            st.subheader("Suggested corrections — review before applying")
-            st.caption(
-                "These are heuristic suggestions, not proof that a value is wrong. "
-                "By default, suggestions are not applied to the clean dataset."
-            )
-            if suggested_log.empty:
-                st.info("No correction suggestions were generated.")
-            else:
-                st.dataframe(suggested_log, use_container_width=True, hide_index=True)
-                st.download_button(
-                    "Download suggested corrections CSV",
-                    suggested_log.to_csv(index=False),
-                    file_name="suggested_corrections.csv",
-                    mime="text/csv",
-                )
-            apply_suggestions = st.checkbox(
-                "Apply all suggested corrections to the clean dataset",
-                value=False,
-                help=(
-                    "This applies every suggestion in the list as a batch. Review the full list first. "
-                    "Individual suggestion approval is not yet supported."
-                ),
-            )
-            if apply_suggestions:
-                clean_df = suggested_df
-                correction_log = suggested_log
-            else:
-                clean_df = df.copy()
-                correction_log = pd.DataFrame(
-                    columns=["row_index", "uuid", "field", "rule", "before", "after", "timestamp"]
-                )
+            clean_df, correction_log = correct(df)
         except Exception:
             st.error(
-                "M4S QA could not prepare correction suggestions. No results are available. "
+                "M4S QA could not complete the correction stage. No results are available. "
                 "The uploaded source file is not changed. Retry the workflow; if the problem persists, "
                 "report the correction stage without sharing survey data."
             )
