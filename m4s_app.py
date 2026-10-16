@@ -11,6 +11,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 import numpy as np
+import re
 import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
@@ -806,6 +807,59 @@ from frictionless import validate as frictionless_validate
 ISSUE_COLUMNS = ["row_number", "column", "category", "severity", "message"]
 
 
+
+def similar_text_value_issues(df: pd.DataFrame, *, threshold: int = 90, max_unique_values: int = 100) -> pd.DataFrame:
+    """Suggest similar categorical text values for human review; never edit source values.
+
+    To limit false positives and quadratic work, identifier/location/time/URL-like columns,
+    numeric-only columns, very short values, and columns with too many distinct values are skipped.
+    """
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 80 <= threshold <= 100:
+        raise ValueError("Similarity threshold must be an integer from 80 to 100.")
+    excluded_name_parts = {"id", "uuid", "url", "email", "phone", "gps", "latitude", "longitude",
+                           "date", "time", "timestamp", "photo", "image", "path", "code", "number"}
+    missing_tokens = {"", "na", "n/a", "null", "none", "nan"}
+    issues: list[dict] = []
+
+    for column in df.columns:
+        name_parts = set(re.sub(r"[^a-z0-9]+", " ", str(column).casefold()).split())
+        if name_parts & excluded_name_parts:
+            continue
+        series = df[column].astype("string")
+        positions_by_value: dict[str, list[int]] = {}
+        for position, raw in enumerate(series.tolist(), start=2):
+            if pd.isna(raw):
+                continue
+            value = str(raw)
+            cleaned = value.strip()
+            if cleaned.casefold() in missing_tokens or len(cleaned) < 3 or cleaned.startswith(("http://", "https://")):
+                continue
+            positions_by_value.setdefault(value, []).append(position)
+
+        values = sorted(positions_by_value)
+        if len(values) < 2 or len(values) > max_unique_values:
+            continue
+        numeric = pd.to_numeric(pd.Series(values, dtype="string"), errors="coerce")
+        if numeric.notna().all():
+            continue
+
+        normalized = {value: re.sub(r"\s+", " ", value).strip().casefold() for value in values}
+        for left_index, left in enumerate(values):
+            for right in values[left_index + 1:]:
+                score = int(round(fuzz.ratio(normalized[left], normalized[right])))
+                if score < threshold:
+                    continue
+                message = (f"Text value {left!r} is similar to {right!r} ({score}% similarity). "
+                           "Review whether they represent the same category; no value was changed.")
+                for value in (left, right):
+                    for row_number in positions_by_value[value]:
+                        issues.append({"row_number": row_number, "column": column,
+                                       "category": "value_variant", "severity": "warning",
+                                       "message": message})
+
+    return pd.DataFrame(issues, columns=ISSUE_COLUMNS)
+
+
 def read_csv_bytes(data: bytes, *, encoding: str = "utf-8-sig") -> pd.DataFrame:
     """Read CSV bytes without silently converting identifier strings to numbers."""
     if not data:
@@ -884,6 +938,7 @@ def run_quality_checks(
     missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
     duplicate_rows: bool = True,
     outlier_checks: bool = True,
+    similar_text_values: bool = False,
     contract: dict | None = None,
 ) -> pd.DataFrame:
     """Run all enabled stages or raise a stage-labelled error; never return partial findings."""
@@ -898,6 +953,7 @@ def run_quality_checks(
             missing_tokens=missing_tokens,
             duplicate_rows=duplicate_rows,
             outlier_checks=outlier_checks,
+            similar_text_values=similar_text_values,
         )
         if contract is not None:
             contract_findings = validate_contract(df, contract)
@@ -918,6 +974,7 @@ def validate_dataframe(
     missing_tokens: tuple[str, ...] = ("", "NA", "N/A", "NULL", "null"),
     duplicate_rows: bool = True,
     outlier_checks: bool = True,
+    similar_text_values: bool = False,
 ) -> pd.DataFrame:
     """Apply generic checks; row_number is the 1-based CSV data row (header excluded)."""
     issues: list[dict] = []
@@ -951,6 +1008,9 @@ def validate_dataframe(
                 "", str(failure.get("column", "")), "schema", "error",
                 str(failure.get("failure_case", "DataFrame schema validation failed")),
             ))
+
+    if similar_text_values:
+        issues.extend(similar_text_value_issues(df).to_dict("records"))
 
     if outlier_checks:
         for column in df.columns:
@@ -996,6 +1056,7 @@ def render_generic_csv_checker():
         - Blank values and configured missing-value tokens
         - Exact duplicate rows
         - Optional IQR-based numeric outlier screening
+        - Optional similar-text value suggestions for human review; no automatic changes
         - Optional JSON contract for required columns, allowed values, types, numeric ranges, and unique keys
         - No automatic corrections; review findings before changing source data
         """)
@@ -1003,6 +1064,7 @@ def render_generic_csv_checker():
     missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null", key="generic_missing_tokens")
     check_duplicates = st.checkbox("Check exact duplicate rows", value=True, key="generic_duplicates")
     check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True, key="generic_outliers")
+    check_similar_values = st.checkbox("Suggest similar text values for review (no automatic changes)", value=False, key="generic_similar_values")
     contract_file = st.file_uploader("Optional validation contract (JSON)", type=["json"], key="generic_contract")
     contract = None
     if contract_file is not None:
@@ -1030,6 +1092,7 @@ def render_generic_csv_checker():
                 missing_tokens=tokens,
                 duplicate_rows=check_duplicates,
                 outlier_checks=check_outliers,
+                similar_text_values=check_similar_values,
                 contract=contract,
             )
     except QualityCheckError as exc:

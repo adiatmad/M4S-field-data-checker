@@ -6,6 +6,7 @@ from kobo_csv_quality import (
     findings_summary,
     read_csv_bytes,
     run_quality_checks,
+    similar_text_value_issues,
     structural_issues,
     validate_dataframe,
 )
@@ -136,3 +137,39 @@ def test_contract_rule_for_missing_column_is_reported_instead_of_skipped():
     assert missing_column.iloc[0]["row_number"] == ""
     assert "configured checks could not run" in missing_column.iloc[0]["message"]
 
+
+
+def test_similar_text_values_are_review_warnings_and_do_not_mutate_input():
+    frame = pd.DataFrame({"village": ["Sabuli", "Sabul i", "Metinaro"], "record_id": ["001", "002", "003"]})
+    before = frame.copy(deep=True)
+
+    findings = similar_text_value_issues(frame, threshold=85)
+
+    assert not findings.empty
+    assert set(findings["category"]) == {"value_variant"}
+    assert set(findings["severity"]) == {"warning"}
+    assert set(findings["row_number"]) == {2, 3}
+    pd.testing.assert_frame_equal(frame, before)
+
+
+def test_similar_text_values_skip_identifier_columns_and_numeric_values():
+    frame = pd.DataFrame({"record_id": ["ABC123", "ABC12B"], "score": ["100", "101"]})
+    assert similar_text_value_issues(frame).empty
+
+
+def test_similar_text_values_can_be_enabled_through_pipeline():
+    data = b"village,record_id\nSabuli,001\nSabul i,002\n"
+    frame = read_csv_bytes(data)
+    findings = run_quality_checks(data, "survey.csv", frame,
+                                  duplicate_rows=False, outlier_checks=False,
+                                  similar_text_values=True)
+    assert (findings["category"] == "value_variant").any()
+
+
+def test_similar_text_values_detect_whitespace_and_case_variants():
+    frame = pd.DataFrame({"village": ["Sabuli", " sabuli "]})
+
+    findings = similar_text_value_issues(frame)
+
+    assert set(findings["row_number"]) == {2, 3}
+    assert (findings["category"] == "value_variant").all()

@@ -11,6 +11,7 @@ Field coordinators, data managers, and survey teams who need actionable flags be
 - Run Frictionless resource/CSV structure validation.
 - Run Pandera dataframe schema validation without inventing domain-specific constraints.
 - Flag configurable missing-value tokens, exact duplicate rows, and optional numeric IQR outliers.
+- Optionally suggest similar text values in low-cardinality categorical columns for human review, without editing source values.
 - Accept an optional, user-authored JSON contract for required columns, allowed values, numeric/date/boolean checks, numeric bounds, and composite unique keys; never infer domain rules.
 - Show finding category, severity, row number, column, and explanation.
 - Export findings as CSV and allow download of the unchanged input.
@@ -18,6 +19,7 @@ Field coordinators, data managers, and survey teams who need actionable flags be
 
 ## Non-goals
 - No automatic edits to source records.
+- No automatic merging of similar text values; suggestions remain warnings for human review.
 - No assumption that every numeric outlier is an error.
 - No automatic inference of skip logic, repeat groups, or XLSForm constraints in this generic MVP.
 - No claim of complete Kobo schema validation without the XLSForm or an explicit schema.

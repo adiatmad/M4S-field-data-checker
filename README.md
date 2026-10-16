@@ -15,6 +15,7 @@ Choose **Generic Kobo CSV checker** if you want general checks for a survey expo
 It can help you:
 - find blank or missing values;
 - identify rows that look exactly alike;
+- optionally suggest similar categorical text values (such as spelling, spacing, or capitalization variants) for human review;
 - check whether the file's columns and values have basic structural problems;
 - flag unusual numeric values for you to review; and
 - download a list of findings to investigate.
@@ -82,7 +83,7 @@ By default, the results are written to an `output/` folder. You can choose anoth
 
 - **This tool supports review; it does not replace your survey form or field protocol.** For complete checks of required answers, skip logic, choices, and repeat groups, the matching KoboToolbox XLSForm or another authoritative schema may be needed.
 - **Do not accept a flag blindly.** Check the original record and the survey context before deciding what to change.
-- **Unusual values are not automatically errors.** An outlier may be a genuine observation.
+- **Unusual values are not automatically errors.** An outlier may be a genuine observation. Similar-text suggestions can also be false positives; they are opt-in review aids, not automatic corrections.
 - **Survey-specific rules need evidence.** Ecological thresholds and species rules should match the approved M4S protocol. The species-sum rule is currently disabled pending confirmation against the field protocol.
 - **Protect field data.** The apps process uploaded files on the server where they run. Running locally keeps processing on your computer; before using a hosted version, confirm its access controls, retention, and data-protection arrangements. Never commit real survey exports, credentials, or personal information to this repository.
 
