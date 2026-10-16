@@ -60,7 +60,7 @@ def suggest_corrections(
             alternatives = []
             current_norm = _text(current).casefold()
             for candidate in values:
-                if candidate == current or _text(candidate).casefold() == current_norm:
+                if candidate == current:
                     continue
                 score = int(round(fuzz.token_sort_ratio(current_norm, _text(candidate).casefold())))
                 if score >= threshold and preference(candidate) > preference(current):
