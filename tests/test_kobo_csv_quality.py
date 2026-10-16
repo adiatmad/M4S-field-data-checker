@@ -164,3 +164,12 @@ def test_similar_text_values_can_be_enabled_through_pipeline():
                                   duplicate_rows=False, outlier_checks=False,
                                   similar_text_values=True)
     assert (findings["category"] == "value_variant").any()
+
+
+def test_similar_text_values_detect_whitespace_and_case_variants():
+    frame = pd.DataFrame({"village": ["Sabuli", " sabuli "]})
+
+    findings = similar_text_value_issues(frame)
+
+    assert set(findings["row_number"]) == {2, 3}
+    assert (findings["category"] == "value_variant").all()
