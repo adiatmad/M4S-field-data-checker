@@ -124,7 +124,8 @@ def apply_approved_corrections(
             raise ValueError(f"Proposal field no longer exists: {field}")
         before = proposal["current_value"]
         after = proposal["suggested_value"]
-        # Match against the original snapshot so one approved mapping cannot cascade into another.\n        mask = source[field].eq(before).fillna(False)
+        # Match against the original snapshot so one approved mapping cannot cascade into another.
+        mask = source[field].eq(before).fillna(False)
         for index in result.index[mask]:
             log_rows.append({
                 "row_index": index,
