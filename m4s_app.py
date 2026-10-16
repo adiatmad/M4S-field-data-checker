@@ -830,8 +830,9 @@ def similar_text_value_issues(df: pd.DataFrame, *, threshold: int = 90, max_uniq
         for position, raw in enumerate(series.tolist(), start=2):
             if pd.isna(raw):
                 continue
-            value = str(raw).strip()
-            if value.casefold() in missing_tokens or len(value) < 3 or value.startswith(("http://", "https://")):
+            value = str(raw)
+            cleaned = value.strip()
+            if cleaned.casefold() in missing_tokens or len(cleaned) < 3 or cleaned.startswith(("http://", "https://")):
                 continue
             positions_by_value.setdefault(value, []).append(position)
 
