@@ -23,7 +23,7 @@ if uploaded is None:
 
 try:
     with tempfile.TemporaryDirectory(prefix="m4s_review_") as temp_dir:
-        input_path = Path(temp_dir) / uploaded.name
+        input_path = Path(temp_dir) / "raw_export.xlsx"
         input_path.write_bytes(uploaded.getvalue())
         raw_df, working_df = load_data(str(input_path))
     working_df = standardize(working_df)
