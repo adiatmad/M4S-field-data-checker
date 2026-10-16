@@ -15,5 +15,5 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m compileall -q kobo_csv_quality.py kobo_csv_quality_app.py m4s_seagrass_qa.py m4s_app.py
+      - run: python -m compileall -q kobo_csv_quality.py kobo_csv_quality_app.py m4s_seagrass_qa.py m4s_app.py correction_review.py pages/1_Review_M4S_Corrections.py
       - run: python -m pytest -q
