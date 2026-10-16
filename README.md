@@ -109,3 +109,8 @@ The test suite covers the generic CSV checker and validation failure handling. A
 ## License
 
 See [LICENSE](LICENSE). The repository is licensed under AGPL-3.0.
+
+
+## Optional: Review M4S corrections before applying
+
+The **Review M4S Corrections** page proposes possible collector-name and configured geography spelling corrections, but does not change values until you select individual proposals. Approved changes can be downloaded with a before/after audit log. Keep the raw export unchanged and verify proposals with the field team. See [the correction review workflow](docs/CORRECTION_REVIEW.md).

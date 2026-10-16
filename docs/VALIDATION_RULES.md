@@ -28,3 +28,8 @@ The M4S GPS check compares each coordinate with one configured reference centroi
 ## Similar text value suggestions
 
 This opt-in generic check compares distinct text values only in columns with 2–100 distinct values, uses a 90% similarity threshold by default, and skips identifier-, URL-, location-coordinate-, date/time-, and numeric-only columns. It reports source row numbers and warnings; it never merges, replaces, or normalizes source values. Similarity is a candidate-generation heuristic, not proof that two values mean the same thing. The current version is intentionally bounded and does not reproduce OpenRefine's full clustering algorithms or interactive operation history.
+
+
+## Review-before-apply corrections
+
+The optional Streamlit page at `pages/1_Review_M4S_Corrections.py` generates candidate spelling corrections without mutating source values. Only individually approved proposal IDs are applied, and every changed row is recorded in an audit log. The feature does not replace the existing legacy correction pipeline; use the review page when human approval is required. Similarity is not evidence that two collector names refer to the same person.
