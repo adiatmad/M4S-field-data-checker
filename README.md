@@ -35,7 +35,7 @@ These checks include assumptions specific to the M4S project, such as expected c
 3. **You review the findings.** A warning is a reason to investigate, not proof that a record is wrong.
 4. **You download the results.** Depending on the workflow, you can download a findings list or QA outputs for further review.
 
-The generic CSV checker keeps CSV values as text during checks, so an identifier like `0012` is not silently changed to `12`. It does not automatically correct your original CSV. The M4S-specific command-line workflow can make a limited set of documented corrections; it also keeps a raw copy and correction log in its output.
+The generic CSV checker keeps CSV values as text during checks, so an identifier like `0012` is not silently changed to `12`. It does not automatically correct your original CSV. The M4S-specific workflow generates heuristic correction suggestions. In the Streamlit app, suggestions are **not applied by default**: review the full list first, then explicitly opt in to applying the suggestions as a batch. Individual suggestion approval is not yet supported. The command-line workflow retains its existing correction behavior and writes a raw copy and correction log.
 
 **Important:** A result with no findings means only that the checks you ran did not report a problem. It does not prove that every answer is correct.
 
