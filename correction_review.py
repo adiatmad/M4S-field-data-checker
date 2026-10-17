@@ -6,6 +6,7 @@ applied only when the caller explicitly selects its proposal.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from numbers import Integral
 from typing import Iterable
 
 import pandas as pd
@@ -106,7 +107,13 @@ def apply_approved_corrections(
     df: pd.DataFrame, proposals: pd.DataFrame, approved_ids: Iterable[int]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply only explicitly approved proposal IDs and return a reversible log."""
-    approved = {int(value) for value in approved_ids}
+    approved = set()
+    for value in approved_ids:
+        # Never coerce a malformed value into a valid approval (e.g. 1.5, True, or "1").
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise ValueError("Approved IDs must be integer proposal IDs.")
+        approved.add(int(value))
+
     known = set(proposals["proposal_id"].astype(int)) if not proposals.empty else set()
     unknown = approved - known
     if unknown:

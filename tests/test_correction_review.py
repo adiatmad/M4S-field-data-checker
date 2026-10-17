@@ -53,3 +53,14 @@ def test_unknown_proposal_id_is_rejected():
 def test_similarity_threshold_is_validated():
     with pytest.raises(ValueError):
         suggest_corrections(pd.DataFrame({"Collector Name": ["A", "B"]}), threshold=79)
+
+
+
+@pytest.mark.parametrize("approved_ids", [[1.5], [True], ["1"]])
+def test_invalid_approval_identifiers_are_rejected_without_applying_changes(approved_ids):
+    source = pd.DataFrame({"Village": ["Sabulii"], "_uuid": ["u1"]})
+    proposals = suggest_corrections(source)
+    assert len(proposals) == 1
+    with pytest.raises(ValueError, match="integer proposal IDs"):
+        apply_approved_corrections(source, proposals, approved_ids)
+    assert source.loc[0, "Village"] == "Sabulii"
