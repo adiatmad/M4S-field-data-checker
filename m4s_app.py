@@ -1322,9 +1322,9 @@ else:
     """)
     
     # Show QA columns summary
-    qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates', 
+    qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates',
                'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
-               'qa_coverage_mismatch']
+               'qa_missing_general_condition', 'qa_coverage_mismatch']
     
     qa_summary = {}
     for col in qa_cols:
@@ -1463,6 +1463,33 @@ else:
             file_name="clean_dataset.csv"
         )
     
+    # ---- ENUMERATOR-SPECIFIC ERROR EXPORTS ----
+    st.divider()
+    st.subheader("Enumerator-specific error reports")
+    st.caption("Downloads one CSV per enumerator. Each finding includes the direct Kobo photo URL when the export contains one. These switches affect only enumerator-facing reports; the full internal QA findings remain unchanged.")
+    include_gps_accuracy = st.checkbox(
+        "Include GPS precision / accuracy checks in enumerator reports",
+        value=True,
+        key="enumerator_report_gps_accuracy",
+    )
+    include_site_distance = st.checkbox(
+        "Include GPS site-distance warnings in enumerator reports",
+        value=True,
+        key="enumerator_report_site_distance",
+    )
+    report_zip = enumerator_error_zip(
+        clean_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+    )
+    st.download_button(
+        "Download ZIP of individual enumerator error logs",
+        data=report_zip,
+        file_name="m4s_enumerator_error_logs.zip",
+        mime="application/zip",
+        help="Each CSV contains only findings for one enumerator, sorted by source row.",
+    )
+
     # ---- QUICK REFERENCE ----
     with st.expander("QA column reference"):
         st.markdown("""
