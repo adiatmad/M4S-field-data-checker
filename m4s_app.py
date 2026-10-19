@@ -698,8 +698,15 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     before_fmt = df["Collector Name"].copy()
 
     def format_fix(v):
-        if isinstance(v, str) and "_" in v:
+        if not isinstance(v, str):
+            return v
+        if "_" in v:
             return v.replace("_", " ").title()
+        # Normalize only uniform all-lower/all-upper names; preserve intentional mixed case.
+        if v.isalpha() and (v.islower() or v.isupper()):
+            return v.title()
+        if v and (v.islower() or v.isupper()):
+            return v.title()
         return v
 
     df["Collector Name"] = df["Collector Name"].apply(format_fix)
