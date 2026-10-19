@@ -630,6 +630,18 @@ def enumerator_error_workbook(df, issues, *, include_gps_accuracy=True, include_
             "Findings": 0, "Errors": 0, "Warnings": 0,
         }])
 
+    # Present findings in a consistent, review-friendly order without modifying source data.
+    display_columns = {
+        "row_index": "Source row",
+        "uuid": "Submission UUID",
+        "category": "Issue category",
+        "field": "Field to check",
+        "severity": "Severity",
+        "message": "Finding / suggested action",
+        "photo_url": "Kobo photo URL",
+    }
+    preferred = ["row_index", "uuid", "severity", "category", "field", "message", "photo_url"]
+
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="Summary", index=False)
@@ -645,7 +657,57 @@ def enumerator_error_workbook(df, issues, *, include_gps_accuracy=True, include_
                 candidate = f"{base[:31-len(marker)]}{marker}"
                 suffix += 1
             used_names.add(candidate.casefold())
-            frame.to_excel(writer, sheet_name=candidate, index=False)
+            ordered = [column for column in preferred if column in frame.columns]
+            # Retain any future fields instead of silently dropping them.
+            ordered += [column for column in frame.columns if column not in ordered and column != "enumerator"]
+            sheet = frame.loc[:, ordered].rename(columns=display_columns)
+            sheet.to_excel(writer, sheet_name=candidate, index=False)
+
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        header_fill = PatternFill("solid", fgColor="1F4E78")
+        header_font = Font(color="FFFFFF", bold=True)
+        for worksheet in writer.book.worksheets:
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = worksheet.dimensions
+            worksheet.sheet_view.showGridLines = False
+            for cell in worksheet[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+            for column_cells in worksheet.columns:
+                column_letter = get_column_letter(column_cells[0].column)
+                header = str(column_cells[0].value or "")
+                values = [len(str(cell.value or "")) for cell in column_cells[:200]]
+                width = min(max(max(values, default=10) + 2, 12), 52)
+                if header in ("Finding / suggested action", "Kobo photo URL"):
+                    width = 48
+                elif header in ("Submission UUID", "Enumerator"):
+                    width = 28
+                worksheet.column_dimensions[column_letter].width = width
+            for row in worksheet.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = Alignment(vertical="top", wrap_text=cell.column == 6)
+                if worksheet.title != "Summary":
+                    headers = {cell.value: cell.column for cell in worksheet[1]}
+                    severity_column = headers.get("Severity")
+                    if severity_column:
+                        severity_cell = row[severity_column - 1]
+                        severity = str(severity_cell.value or "").casefold()
+                        if severity == "error":
+                            severity_cell.fill = PatternFill("solid", fgColor="FCE4D6")
+                            severity_cell.font = Font(color="9C0006", bold=True)
+                        elif severity == "warning":
+                            severity_cell.fill = PatternFill("solid", fgColor="FFF2CC")
+                            severity_cell.font = Font(color="9C6500", bold=True)
+                    photo_column = headers.get("Kobo photo URL")
+                    if photo_column:
+                        photo_cell = row[photo_column - 1]
+                        url = str(photo_cell.value or "").strip()
+                        if url.startswith(("https://", "http://")):
+                            photo_cell.hyperlink = url
+                            photo_cell.style = "Hyperlink"
     return buffer.getvalue()
 
 
@@ -1672,19 +1734,6 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
-    report_zip = enumerator_error_zip(
-        clean_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    st.download_button(
-        "Download ZIP of individual enumerator error logs",
-        data=report_zip,
-        file_name="m4s_enumerator_error_logs.zip",
-        mime="application/zip",
-        help="Each CSV contains only findings for one enumerator, sorted by source row.",
-    )
     report_workbook = enumerator_error_workbook(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1692,11 +1741,11 @@ else:
         include_text_formatting=include_text_formatting,
     )
     st.download_button(
-        "Download Excel workbook — one sheet per enumerator",
+        "Download enumerator error logs (.xlsx)",
         data=report_workbook,
-        file_name="m4s_enumerator_error_reports.xlsx",
+        file_name="m4s_enumerator_error_logs.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="Includes a summary sheet plus a separate worksheet for each enumerator, with findings and Kobo photo URLs when available.",
+        help="A formatted Excel workbook with a summary and one filterable worksheet per enumerator. Findings are sorted by source row; photo URLs are clickable when available.",
     )
 
     # ---- QUICK REFERENCE ----
