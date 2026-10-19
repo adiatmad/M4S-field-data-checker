@@ -3,7 +3,7 @@ import io
 import pandas as pd
 from openpyxl import load_workbook
 
-from m4s_app import enumerator_error_workbook
+from enumerator_reports import enumerator_error_workbook
 
 
 def test_enumerator_error_workbook_is_formatted_and_filterable():
