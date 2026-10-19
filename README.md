@@ -113,4 +113,4 @@ See [LICENSE](LICENSE). The repository is licensed under AGPL-3.0.
 
 ## Optional: Review M4S corrections before applying
 
-The **Review M4S Corrections** page proposes possible collector-name and configured geography spelling corrections, but does not change values until you select individual proposals. Approved changes can be downloaded with a before/after audit log. Keep the raw export unchanged and verify proposals with the field team. See [the correction review workflow](docs/CORRECTION_REVIEW.md).
+The M4S workflow includes a collapsed **Review suggested name and geography corrections** section on the same page as the QA findings. Nothing is changed until you explicitly approve individual proposals. Approved changes can be downloaded with a before/after audit log. Keep the raw export unchanged and verify proposals with the field team. See [the correction review workflow](docs/CORRECTION_REVIEW.md).
