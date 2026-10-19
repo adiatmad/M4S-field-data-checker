@@ -154,7 +154,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     required = [
         "start", "end", "Collector Name", "Date and time",
         "Administration Post", "Village", "_Local GPS_latitude",
-        "_Local GPS_longitude", "_Local GPS_precision", "_uuid",
+        "_Local GPS_longitude", "_uuid",
         "Transect Number", "Quadrat Number", "Presence of Seagrass",
         "Quadrat Photo_URL",
     ]
@@ -228,7 +228,8 @@ def validate_gps(df):
     issues = []
     for i, r in df.iterrows():
         uid = r["_uuid"]
-        lat, lon, prec = r["_Local GPS_latitude"], r["_Local GPS_longitude"], r["_Local GPS_precision"]
+        lat, lon = r["_Local GPS_latitude"], r["_Local GPS_longitude"]
+        prec = r.get("_Local GPS_precision", np.nan)
         if pd.isna(lat) or pd.isna(lon):
             issues.append(_new_issue(i, uid, "gps", "_Local GPS", "error",
                                       "Missing GPS coordinates"))
