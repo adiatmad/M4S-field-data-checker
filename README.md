@@ -24,7 +24,7 @@ It does **not** know what every question in your survey means. For example, it c
 
 ### I have an Excel (.xlsx) export for the M4S seagrass survey
 
-Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. The app can also download separate enumerator error logs with direct Kobo photo URLs and optional GPS-accuracy/site-distance findings hidden from enumerator-facing reports. The report switches are configuration controls, not role-based access control.
+Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. The app can also download separate enumerator error logs with direct Kobo photo URLs and optional GPS-accuracy/site-distance findings hidden from enumerator-facing reports. The report switches can independently include or hide GPS precision, site-distance, and Tetum/categorical text-variant findings. They are configuration controls, not role-based access control.
 
 These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
 

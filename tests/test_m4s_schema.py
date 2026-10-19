@@ -7,6 +7,7 @@ from m4s_seagrass_qa import (
     load_data,
     standardize,
     validate,
+    validate_categorical_text_quality,
 )
 
 
@@ -158,3 +159,54 @@ def test_clean_dataset_generates_report_with_zero_issues(tmp_path):
     assert "Clean (no issues): **1**" in report
     assert "Errors: **0**" in report
     assert "No issues found." in report
+
+
+def test_tetum_yes_no_values_are_normalized_case_insensitively():
+    frame = tetun_export_frame()
+    frame.loc[0, "Prezensa Du'ut tasi (Seagrass)"] = "SIM"
+    canonical = _canonicalize_form_columns(frame)
+    assert canonical.loc[0, "Presence of Seagrass"] == "Yes"
+
+    frame.loc[0, "Prezensa Du'ut tasi (Seagrass)"] = "LAE"
+    canonical = _canonicalize_form_columns(frame)
+    assert canonical.loc[0, "Presence of Seagrass"] == "No"
+
+
+def test_categorical_capitalization_variants_are_flagged_without_auto_correction():
+    frame = pd.DataFrame({
+        "General Condition": ["Diak", "diak", "Diak"],
+        "_uuid": ["one", "two", "three"],
+    })
+    issues = validate_categorical_text_quality(frame)
+
+    assert len(issues) == 1
+    assert issues[0]["row_index"] == 1
+    assert issues[0]["category"] == "text_formatting"
+    assert "Inconsistent capitalization" in issues[0]["message"]
+    assert frame.loc[1, "General Condition"] == "diak"
+
+
+def test_enumerator_report_can_hide_text_formatting_findings_only():
+    from m4s_seagrass_qa import filter_enumerator_report_issues
+
+    issues = pd.DataFrame([
+        {"row_index": 0, "uuid": "a", "category": "text_formatting", "field": "General Condition",
+         "severity": "warning", "message": "Inconsistent capitalization"},
+        {"row_index": 0, "uuid": "a", "category": "gps", "field": "_Local GPS_precision",
+         "severity": "warning", "message": "GPS precision 12.0 m: below recommended accuracy"},
+    ])
+    visible = filter_enumerator_report_issues(issues, include_text_formatting=False)
+    assert visible["category"].tolist() == ["gps"]
+
+
+def test_tetum_categorical_spelling_variants_are_suggested_not_corrected():
+    frame = pd.DataFrame({
+        "General Condition": ["Diak", "Di'ak", "Diak", "Diak"],
+        "_uuid": ["one", "two", "three", "four"],
+    })
+    issues = validate_categorical_text_quality(frame)
+    spelling = [issue for issue in issues if "Possible spelling variant" in issue["message"]]
+
+    assert spelling
+    assert spelling[0]["row_index"] == 1
+    assert frame.loc[1, "General Condition"] == "Di'ak"

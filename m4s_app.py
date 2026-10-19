@@ -139,7 +139,11 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Tetun labels use Sim/Lae for yes/no; normalize only this known field's values.
     presence = "Presence of Seagrass"
     if presence in df.columns:
-        df[presence] = df[presence].replace({"Sim": "Yes", "Lae": "No", "sim": "Yes", "lae": "No"})
+        # Tetum Sim/Lae responses may be exported with any capitalization.
+        normalized_presence = df[presence].map(
+            lambda value: value.strip().casefold() if isinstance(value, str) else value
+        )
+        df[presence] = normalized_presence.replace({"sim": "Yes", "lae": "No"})
     return df
 
 
@@ -298,6 +302,70 @@ def validate_species_logic(df):
                                       "Missing seagrass species: Presence of Seagrass = Yes but no species selected"))
     return issues
 
+
+
+def validate_categorical_text_quality(df):
+    """Warn about inconsistent capitalization in low-cardinality categorical text fields.
+
+    This reports suggestions instead of rewriting survey answers. It skips names,
+    free-text fields, identifiers, URLs, and columns with too many distinct values.
+    """
+    issues = []
+    excluded = ("name", "naran", "collector", "uuid", "url", "photo", "comment",
+                "note", "description", "address", "email", "phone", "date", "time",
+                "start", "end", "id", "enumerator")
+    text_columns = df.select_dtypes(include=["object", "string"]).columns
+    for column in text_columns:
+        label = str(column).casefold()
+        if any(token in label for token in excluded):
+            continue
+        values = df[column]
+        nonblank = values[values.notna()].map(
+            lambda value: value.strip() if isinstance(value, str) else value
+        )
+        nonblank = nonblank[nonblank.map(
+            lambda value: isinstance(value, str) and bool(value)
+        )]
+        distinct = list(pd.unique(nonblank))
+        if len(distinct) < 2 or len(distinct) > 30:
+            continue
+        groups = {}
+        for value in distinct:
+            groups.setdefault(value.casefold(), []).append(value)
+        for variants in groups.values():
+            if len(variants) < 2:
+                continue
+            counts = {variant: int((nonblank == variant).sum()) for variant in variants}
+            canonical = max(variants, key=lambda variant: (counts[variant], -variants.index(variant)))
+            for idx, value in nonblank[nonblank.map(
+                lambda item: item in variants and item != canonical
+            )].items():
+                issues.append(_new_issue(
+                    idx, df.at[idx, "_uuid"] if "_uuid" in df.columns else None,
+                    "text_formatting", column, "warning",
+                    f"Inconsistent capitalization for {value!r}; most common form is {canonical!r}. "
+                    "Review the value; the checker does not change it automatically."
+                ))
+        # Suggest likely spelling variants (including Tetum categorical values) without
+        # asserting correctness; no authoritative Tetum vocabulary is bundled with the app.
+        for left_index, left in enumerate(distinct):
+            for right in distinct[left_index + 1:]:
+                if left.casefold() == right.casefold():
+                    continue
+                similarity = fuzz.ratio(left.casefold(), right.casefold())
+                if similarity < 85:
+                    continue
+                counts = {value: int((nonblank == value).sum()) for value in (left, right)}
+                canonical = max((left, right), key=lambda value: (counts[value], -distinct.index(value)))
+                variant = right if canonical == left else left
+                for idx in nonblank[nonblank == variant].index:
+                    issues.append(_new_issue(
+                        idx, df.at[idx, "_uuid"] if "_uuid" in df.columns else None,
+                        "text_formatting", column, "warning",
+                        f"Possible spelling variant {variant!r}; similar observed value is {canonical!r} "
+                        f"({similarity:.0f}% similarity). Verify the Tetum spelling and meaning manually."
+                    ))
+    return issues
 
 def validate_percent_fields(df):
     issues = []
@@ -479,9 +547,12 @@ def _issue_export_frame(df, issues):
     return enriched
 
 
-def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, include_site_distance=True):
-    """Hide optional GPS-quality findings from enumerator reports without deleting internal findings."""
+def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, include_site_distance=True,
+                                      include_text_formatting=True):
+    """Filter optional GPS/text-cleaning findings from enumerator reports only."""
     visible = issues.copy()
+    if not include_text_formatting and "category" in visible.columns:
+        visible = visible.loc[visible["category"] != "text_formatting"]
     if not include_gps_accuracy and "field" in visible.columns:
         precision = visible["field"].astype("string").str.contains("precision", case=False, na=False)
         visible = visible.loc[~((visible["category"] == "gps") & precision)]
@@ -493,11 +564,13 @@ def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, includ
     return visible.reset_index(drop=True)
 
 
-def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, include_site_distance=True):
+def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
+                               include_text_formatting=True):
     """Return one enriched CSV dataframe per enumerator, sorted by enumerator name."""
     filtered = filter_enumerator_report_issues(
         issues, include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
     )
     enriched = _issue_export_frame(df, filtered)
     if enriched.empty:
@@ -512,7 +585,8 @@ def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, includ
     return logs
 
 
-def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_distance=True):
+def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
+                        include_text_formatting=True):
     """Build a ZIP of individual enumerator CSV error logs."""
     import io
     import zipfile
@@ -520,6 +594,7 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
     logs = build_enumerator_error_logs(
         df, issues, include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
     )
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -532,7 +607,7 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
 def validate(df) -> pd.DataFrame:
     all_issues = []
     for fn in (validate_gps, validate_species_logic, validate_seagrass_general_condition,
-               validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
+               validate_categorical_text_quality, validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
                validate_timestamps, validate_photos, validate_duplicate_submissions,
                validate_coverage_mismatch):
         all_issues.extend(fn(df))
@@ -1473,10 +1548,17 @@ else:
         value=True,
         key="enumerator_report_site_distance",
     )
+    include_text_formatting = st.checkbox(
+        "Include Tetum / categorical capitalization checks in enumerator reports",
+        value=True,
+        key="enumerator_report_text_formatting",
+        help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
+    )
     report_zip = enumerator_error_zip(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
     )
     st.download_button(
         "Download ZIP of individual enumerator error logs",
