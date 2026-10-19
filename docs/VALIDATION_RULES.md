@@ -48,3 +48,10 @@ The optional Streamlit page at `pages/1_Review_M4S_Corrections.py` generates can
 The M4S workflow can produce one CSV per enumerator, sorted by enumerator name, with row-level findings and a photo_url column sourced from the Kobo Quadrat Photo_URL field. If no URL exists in the source export, the field remains blank. The ZIP export is generated locally in the current app process. GPS precision and site-distance findings can be hidden from enumerator-facing reports without deleting them from the full internal findings. These UI switches are not authentication or authorization; deployments needing administrator-only controls must add access control separately.
 
 Basic string whitespace trimming and whitespace collapsing are performed during standardization. Existing logged formatting corrections remain limited to configured enumerator/geography fields; the checker does not automatically title-case arbitrary ecological values or scientific names.
+
+
+## Tetum and categorical text cleaning
+
+- Known Tetum yes/no answers for seagrass presence are normalized case-insensitively: `Sim`, `SIM`, and other case variants map to Yes; `Lae` variants map to No.
+- The M4S validation pipeline warns when low-cardinality text fields contain capitalization variants of the same value (for example, `Diak` and `diak`). It does not automatically rewrite ecological condition values or infer the correct Tetum spelling.
+- Enumerator-facing CSV exports can include or exclude these text-formatting warnings, independently of the GPS accuracy and site-distance options. The full internal QA findings remain available.
