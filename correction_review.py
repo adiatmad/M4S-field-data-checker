@@ -31,7 +31,9 @@ def _text(value: object) -> str:
 
 
 def suggest_corrections(
-    df: pd.DataFrame, *, threshold: int = DEFAULT_THRESHOLD
+    df: pd.DataFrame, *, threshold: int = DEFAULT_THRESHOLD,
+    enumerator_threshold: int | None = None,
+    geography_threshold: int | None = None,
 ) -> pd.DataFrame:
     """Return proposed value mappings without changing source data.
 
@@ -41,6 +43,11 @@ def suggest_corrections(
     """
     if isinstance(threshold, bool) or not isinstance(threshold, int) or not 80 <= threshold <= 100:
         raise ValueError("Threshold must be an integer from 80 to 100.")
+    enumerator_threshold = threshold if enumerator_threshold is None else enumerator_threshold
+    geography_threshold = threshold if geography_threshold is None else geography_threshold
+    for label, value in (("Enumerator threshold", enumerator_threshold), ("Geography threshold", geography_threshold)):
+        if isinstance(value, bool) or not isinstance(value, int) or not 80 <= value <= 100:
+            raise ValueError(f"{label} must be an integer from 80 to 100.")
 
     proposals: list[dict] = []
     next_id = 1
@@ -64,7 +71,7 @@ def suggest_corrections(
                 if candidate == current:
                     continue
                 score = int(round(fuzz.token_sort_ratio(current_norm, _text(candidate).casefold())))
-                if score >= threshold and preference(candidate) > preference(current):
+                if score >= enumerator_threshold and preference(candidate) > preference(current):
                     alternatives.append((score, preference(candidate), candidate))
             if alternatives:
                 alternatives.sort(reverse=True)
@@ -90,7 +97,7 @@ def suggest_corrections(
             if not isinstance(current, str) or not current.strip() or current == canonical:
                 continue
             score = int(round(fuzz.token_sort_ratio(_text(current).casefold(), canonical.casefold())))
-            if score >= threshold:
+            if score >= geography_threshold:
                 proposals.append({
                     "proposal_id": next_id, "field": field,
                     "current_value": current, "suggested_value": canonical,
