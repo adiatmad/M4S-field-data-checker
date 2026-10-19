@@ -210,3 +210,45 @@ def test_tetum_categorical_spelling_variants_are_suggested_not_corrected():
     assert spelling
     assert spelling[0]["row_index"] == 1
     assert frame.loc[1, "General Condition"] == "Di'ak"
+
+
+
+def test_gps_precision_column_is_optional_but_coordinates_are_still_checked(tmp_path):
+    source = tetun_export_frame().drop(columns=["_GPS Lokal_precision"])
+    path = tmp_path / "without_gps_precision.xlsx"
+    source.to_excel(path, index=False)
+
+    raw, working = load_data(str(path))
+    assert "_Local GPS_precision" not in working.columns
+
+    standardized = standardize(working)
+    issues = validate(standardized)
+    assert not (
+        (issues["category"] == "gps")
+        & issues["field"].astype(str).str.contains("precision", case=False)
+    ).any()
+
+
+def test_species_selection_ad_to_aq_requires_matching_percentage_ar_to_be():
+    from m4s_seagrass_qa import SPECIES_LIST, validate_species_logic
+
+    # Build a representative export with the requested Excel-column layout:
+    # AD:AQ = 14 species-selection fields; AR:BE = corresponding cover fields.
+    columns = [f"unused_{index}" for index in range(57)]
+    for offset, species in enumerate(SPECIES_LIST):
+        columns[29 + offset] = f"Seagrass species present in the Quadrat/{species}"
+        columns[43 + offset] = f"Percent {species} (%)"
+    frame = pd.DataFrame([{column: None for column in columns}], columns=columns)
+    frame["_uuid"] = "positional-test"
+    frame["Presence of Seagrass"] = "Yes"
+    selected = "Seagrass species present in the Quadrat/Halophila ovalis"
+    frame.at[0, selected] = 1
+    frame.at[0, "Percent Halophila ovalis (%)"] = None
+
+    issues = validate_species_logic(frame)
+    assert any(
+        issue["row_index"] == 0
+        and issue["field"] == "Percent Halophila ovalis (%)"
+        and "marked present" in issue["message"]
+        for issue in issues
+    )
