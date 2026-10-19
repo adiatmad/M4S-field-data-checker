@@ -1524,22 +1524,14 @@ else:
             mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
         display_df = display_df[mask]
     
-    st.caption(f"Showing {len(display_df)} rows")
-    
-    st.dataframe(
-        display_df,
-        width='stretch',
-        column_config={
-            col: st.column_config.Column(
-                col,
-                help=f"QA flag: 'Yes' indicates this row has the issue",
-                width='small'
-            ) for col in qa_cols if col in display_df.columns
-        }
+    # Keep the key downloads above the preview so users do not have to scroll
+    # through thousands of records to reach the next actions.
+    st.caption(
+        f"Filtered result: {len(display_df):,} rows. Previewing the first "
+        f"{min(10, len(display_df)):,} rows below; download the full result or open "
+        "the expandable table when you need to inspect more."
     )
-    
-    # ---- DOWNLOAD BUTTONS ----
-    st.divider()
+    st.subheader("Downloads")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
@@ -1559,7 +1551,29 @@ else:
             display_df.to_csv(index=False),
             file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         )
-    
+
+    table_config = {
+        col: st.column_config.Column(
+            col,
+            help="QA flag: 'Yes' indicates this row has the issue",
+            width="small",
+        ) for col in qa_cols if col in display_df.columns
+    }
+    st.subheader("Data preview")
+    st.dataframe(
+        display_df.head(10),
+        width="stretch",
+        hide_index=True,
+        column_config=table_config,
+    )
+    with st.expander(f"Open full filtered table ({len(display_df):,} rows)", expanded=False):
+        st.dataframe(
+            display_df,
+            width="stretch",
+            hide_index=True,
+            column_config=table_config,
+        )
+
     st.divider()
     
     # ---- ORIGINAL TABS ----
