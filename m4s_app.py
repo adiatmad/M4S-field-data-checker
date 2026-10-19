@@ -304,7 +304,7 @@ def validate_species_logic(df):
 
 
 
-def validate_text_capitalization(df):
+def validate_categorical_text_quality(df):
     """Warn about inconsistent capitalization in low-cardinality categorical text fields.
 
     This reports suggestions instead of rewriting survey answers. It skips names,
@@ -346,6 +346,25 @@ def validate_text_capitalization(df):
                     f"Inconsistent capitalization for {value!r}; most common form is {canonical!r}. "
                     "Review the value; the checker does not change it automatically."
                 ))
+        # Suggest likely spelling variants (including Tetum categorical values) without
+        # asserting correctness; no authoritative Tetum vocabulary is bundled with the app.
+        for left_index, left in enumerate(distinct):
+            for right in distinct[left_index + 1:]:
+                if left.casefold() == right.casefold():
+                    continue
+                similarity = fuzz.ratio(left.casefold(), right.casefold())
+                if similarity < 85:
+                    continue
+                counts = {value: int((nonblank == value).sum()) for value in (left, right)}
+                canonical = max((left, right), key=lambda value: (counts[value], -distinct.index(value)))
+                variant = right if canonical == left else left
+                for idx in nonblank[nonblank == variant].index:
+                    issues.append(_new_issue(
+                        idx, df.at[idx, "_uuid"] if "_uuid" in df.columns else None,
+                        "text_formatting", column, "warning",
+                        f"Possible spelling variant {variant!r}; similar observed value is {canonical!r} "
+                        f"({similarity:.0f}% similarity). Verify the Tetum spelling and meaning manually."
+                    ))
     return issues
 
 def validate_percent_fields(df):
@@ -588,7 +607,7 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
 def validate(df) -> pd.DataFrame:
     all_issues = []
     for fn in (validate_gps, validate_species_logic, validate_seagrass_general_condition,
-               validate_text_capitalization, validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
+               validate_categorical_text_quality, validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
                validate_timestamps, validate_photos, validate_duplicate_submissions,
                validate_coverage_mismatch):
         all_issues.extend(fn(df))
