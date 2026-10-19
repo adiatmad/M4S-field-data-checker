@@ -635,7 +635,9 @@ def enumerator_error_workbook(df, issues, *, include_gps_accuracy=True, include_
         summary.to_excel(writer, sheet_name="Summary", index=False)
         used_names = {"summary"}
         for name, frame in logs.items():
-            base = re.sub(r"[\\\\/*?:\\[\\]]+", "_", str(name)).strip("' ") or "Enumerator"
+            base = str(name).strip("' ") or "Enumerator"
+            for forbidden in "[]:*?/\\\\":
+                base = base.replace(forbidden, "_")
             candidate = base[:31]
             suffix = 2
             while candidate.casefold() in used_names:
