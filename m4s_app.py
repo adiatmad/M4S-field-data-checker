@@ -882,13 +882,6 @@ def generate_qa_report(df, issues, correction_log, out_path):
         lines.append("No corrections were applied.")
     lines.append("")
 
-    lines.append("## Every flagged record\n")
-    lines.append("| Row | UUID | Category | Field | Severity | Message |")
-    lines.append("|---|---|---|---|---|---|")
-    for _, r in issues.sort_values(["row_index", "severity"]).iterrows():
-        lines.append(f"| {r.row_index} | {str(r.uuid)[:8]}… | {r.category} | {r.field} | "
-                      f"{r.severity} | {r.message} |")
-
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
 
 
