@@ -17,6 +17,7 @@ from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
 from correction_review import apply_approved_corrections, suggest_corrections
 from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
+from enumerator_raw_exports import enumerator_raw_data_zip
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -1558,6 +1559,23 @@ else:
         file_name="m4s_enumerator_error_logs.zip",
         mime="application/zip",
         help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
+    )
+
+    # This is the field team's working copy: preserve the uploaded source columns and
+    # all records for each enumerator, then append QA messages and any missing cover
+    # entry column identified by species-selection checks.
+    raw_data_zip = enumerator_raw_data_zip(
+        raw_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download full raw data + QA messages per enumerator (.zip)",
+        data=raw_data_zip,
+        file_name="m4s_enumerator_raw_data_with_qa.zip",
+        mime="application/zip",
+        help="One CSV per enumerator with all original source columns and rows, plus QA Message, QA Fields to Check, and QA Severity. Missing species-cover fields are added as blank columns so they can be filled after photo review. Open CSVs directly in Excel on Windows.",
     )
 
     # ---- QUICK REFERENCE ----
