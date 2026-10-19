@@ -16,7 +16,7 @@ import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
 from correction_review import apply_approved_corrections, suggest_corrections
-from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
+from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, enumerator_raw_data_review_workbook, enumerator_raw_data_review_zip, filter_enumerator_report_issues
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -1546,6 +1546,35 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
+    # Primary field-review exports preserve every original Kobo column so enumerators
+    # can fill the missing value directly (for example, Ho % cover) after checking photos.
+    review_workbook = enumerator_raw_data_review_workbook(
+        raw_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download enumerator review workbook (raw columns + QA messages)",
+        data=review_workbook,
+        file_name="m4s_enumerator_raw_data_with_qa.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Contains the original source columns, including species percentage-cover fields, plus QA messages. Each enumerator has a separate worksheet; only rows with findings are included.",
+    )
+    review_zip = enumerator_raw_data_review_zip(
+        raw_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download per-enumerator raw-data CSVs (.zip)",
+        data=review_zip,
+        file_name="m4s_enumerator_raw_data_with_qa.zip",
+        mime="application/zip",
+        help="A ZIP containing one CSV per enumerator. Each CSV preserves every original Kobo column and appends QA finding fields; CSVs use a semicolon delimiter and UTF-8 BOM for Excel on Windows.",
+    )
+    # Retain the findings-only export for reviewers who prefer a compact error list.
     report_zip = enumerator_error_zip(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1553,11 +1582,11 @@ else:
         include_text_formatting=include_text_formatting,
     )
     st.download_button(
-        "Download enumerator error logs (.zip)",
+        "Download findings-only error logs (.zip)",
         data=report_zip,
         file_name="m4s_enumerator_error_logs.zip",
         mime="application/zip",
-        help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
+        help="A compact findings-only CSV for each enumerator; this is not the raw-data correction sheet.",
     )
 
     # ---- QUICK REFERENCE ----
