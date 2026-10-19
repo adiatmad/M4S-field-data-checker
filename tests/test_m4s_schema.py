@@ -26,6 +26,7 @@ def tetun_export_frame():
             "Numeru Tranjektu": [1],
             "Numeru Quadrante": [2],
             "Prezensa Du'ut tasi (Seagrass)": ["Sim"],
+            "General Condition": ["Healthy"],
             "Persentajen Kober Alga (%)": [10],
             "Persentajen Epicover (%) ": [40],
             "Foto Quadrante_URL": ["https://example.invalid/photo.jpg"],
