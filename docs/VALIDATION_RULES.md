@@ -40,7 +40,7 @@ The optional Streamlit page at `pages/1_Review_M4S_Corrections.py` generates can
 - If a species is selected as present (including numeric/string encodings of 1), its corresponding species-cover percentage must be recorded and non-zero. If the species selection field exists but its cover column is absent, the record is flagged.
 - If overall seagrass presence is Yes but no species is selected, the row is an error.
 - A seagrass general-condition field must exist and have a nonblank value. The checker recognizes a short list of English and Tetun header variants; confirm the actual field label against the active Kobo XLSForm.
-- Missing latitude or longitude is an error. GPS precision and site-distance checks are separate reportable findings.
+- Missing latitude or longitude is an error. The GPS precision/accuracy column is optional: if it is present, its values are checked; if absent, coordinate and site-distance checks still run. GPS precision and site-distance findings can be hidden from enumerator-facing reports independently.
 - Individual species percentages are summed and compared with Epicover Percentage (%) using a 5-percentage-point tolerance. This is a project assumption, not a universal ecological rule; confirm the total field and tolerance with the approved M4S protocol.
 
 ## Enumerator error exports
