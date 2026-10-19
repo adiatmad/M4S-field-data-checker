@@ -24,7 +24,7 @@ It does **not** know what every question in your survey means. For example, it c
 
 ### I have an Excel (.xlsx) export for the M4S seagrass survey
 
-Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, required answers, timestamps, photos, duplicates, and coverage mismatches.
+Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. The app can also download separate enumerator error logs with direct Kobo photo URLs and optional GPS-accuracy/site-distance findings hidden from enumerator-facing reports. The report switches are configuration controls, not role-based access control.
 
 These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
 
@@ -84,7 +84,7 @@ By default, the results are written to an `output/` folder. You can choose anoth
 - **This tool supports review; it does not replace your survey form or field protocol.** For complete checks of required answers, skip logic, choices, and repeat groups, the matching KoboToolbox XLSForm or another authoritative schema may be needed.
 - **Do not accept a flag blindly.** Check the original record and the survey context before deciding what to change.
 - **Unusual values are not automatically errors.** An outlier may be a genuine observation. Similar-text suggestions can also be false positives; they are opt-in review aids, not automatic corrections.
-- **Survey-specific rules need evidence.** Ecological thresholds and species rules should match the approved M4S protocol. The species-sum rule is currently disabled pending confirmation against the field protocol.
+- **Survey-specific rules need evidence.** Ecological thresholds and species rules should match the approved M4S protocol. Species cover is compared with Epicover using a 5-percentage-point tolerance; confirm this tolerance and the meaning of Epicover against the current field protocol before treating the check as authoritative.
 - **Protect field data.** The apps process uploaded files on the server where they run. Running locally keeps processing on your computer; before using a hosted version, confirm its access controls, retention, and data-protection arrangements. Never commit real survey exports, credentials, or personal information to this repository.
 
 ## For developers and advanced users
