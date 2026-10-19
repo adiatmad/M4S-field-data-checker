@@ -1343,7 +1343,8 @@ def render_generic_csv_checker():
     else:
         categories = st.multiselect("Filter categories", sorted(findings["category"].dropna().unique()), key="generic_categories")
         visible = findings[findings["category"].isin(categories)] if categories else findings
-        st.dataframe(visible, use_container_width=True, hide_index=True)
+        st.caption(f"Preview: first {min(10, len(visible))} of {len(visible):,} findings. Download the CSV for the complete filtered findings.")
+        st.dataframe(visible.head(10), use_container_width=True, hide_index=True)
         st.download_button("Download findings CSV", visible.to_csv(index=False).encode("utf-8"),
                            file_name="kobo_csv_findings.csv", mime="text/csv")
     with st.expander("Preview input (first 100 rows)"):
@@ -1526,8 +1527,9 @@ else:
     
     st.caption(f"Showing {len(display_df)} rows")
     
+    st.caption(f"Preview: first {min(10, len(display_df))} of {len(display_df):,} rows. Downloads below still contain the full filtered result.")
     st.dataframe(
-        display_df,
+        display_df.head(10),
         width='stretch',
         column_config={
             col: st.column_config.Column(
@@ -1577,7 +1579,8 @@ else:
         st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
     
     with tab_issues:
-        st.dataframe(issues, width='stretch')
+        st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the CSV for the full issue list.")
+        st.dataframe(issues.head(10), width='stretch', hide_index=True)
         st.download_button(
             "Download QA issues CSV",
             issues.to_csv(index=False),
@@ -1585,7 +1588,8 @@ else:
         )
     
     with tab_corrections:
-        st.dataframe(correction_log, width='stretch')
+        st.caption(f"Preview: first {min(10, len(correction_log))} of {len(correction_log):,} correction-log rows. Download the CSV for the full log.")
+        st.dataframe(correction_log.head(10), width='stretch', hide_index=True)
         st.download_button(
             "Download correction log CSV",
             correction_log.to_csv(index=False),
@@ -1593,7 +1597,8 @@ else:
         )
     
     with tab_clean:
-        st.dataframe(clean_df, width='stretch')
+        st.caption(f"Preview: first {min(10, len(clean_df))} of {len(clean_df):,} dataset rows. Download the CSV for the complete dataset.")
+        st.dataframe(clean_df.head(10), width='stretch', hide_index=True)
         st.download_button(
             "Download clean dataset CSV",
             clean_df.to_csv(index=False),
@@ -1626,13 +1631,15 @@ else:
             if st.button("Apply selected corrections to a review copy", type="primary", disabled=not approved_ids):
                 reviewed_df, approved_log = apply_approved_corrections(df, proposals, approved_ids)
                 st.success(f"Prepared a review copy with {len(approved_log)} row-level changes. The uploaded source remains unchanged.")
-                st.dataframe(reviewed_df, use_container_width=True)
+                st.caption(f"Preview: first {min(10, len(reviewed_df))} of {len(reviewed_df):,} rows. The download contains the full reviewed dataset.")
+                st.dataframe(reviewed_df.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
                     "Download reviewed dataset (CSV)", reviewed_df.to_csv(index=False).encode("utf-8"),
                     file_name="m4s_corrected_reviewed.csv", mime="text/csv",
                     key="integrated_reviewed_dataset_download",
                 )
-                st.dataframe(approved_log, use_container_width=True)
+                st.caption(f"Preview: first {min(10, len(approved_log))} of {len(approved_log):,} approved changes. The download contains the full audit log.")
+                st.dataframe(approved_log.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
                     "Download approved-correction audit log (CSV)", approved_log.to_csv(index=False).encode("utf-8"),
                     file_name="m4s_approved_correction_log.csv", mime="text/csv",
