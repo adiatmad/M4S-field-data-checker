@@ -85,7 +85,10 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, (name, frame) in enumerate(logs.items(), start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
-            archive.writestr(f"{index:02d}_{safe}_errors.csv", frame.to_csv(index=False))
+            csv_text = frame.to_csv(index=False, sep=";")
+            # Excel on Windows often uses the regional list separator for double-click CSV opening.
+            # A UTF-8 BOM preserves non-ASCII field text in Excel.
+            archive.writestr(f"{index:02d}_{safe}_errors.csv", "\ufeff" + csv_text)
     return buffer.getvalue()
 
 

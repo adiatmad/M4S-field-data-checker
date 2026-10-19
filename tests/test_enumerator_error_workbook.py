@@ -3,7 +3,7 @@ import io
 import pandas as pd
 from openpyxl import load_workbook
 
-from enumerator_reports import enumerator_error_workbook
+from enumerator_reports import enumerator_error_zip, enumerator_error_workbook
 
 
 def test_enumerator_error_workbook_is_formatted_and_filterable():
@@ -75,3 +75,33 @@ def test_enumerator_error_workbook_handles_no_findings():
     workbook = load_workbook(io.BytesIO(workbook_bytes))
     assert workbook.sheetnames == ["Summary"]
     assert workbook["Summary"]["A2"].value == "No findings for the selected report options"
+
+
+
+def test_enumerator_error_zip_csv_opens_as_excel_friendly_semicolon_table():
+    import csv
+    import zipfile
+
+    source = pd.DataFrame({"Collector Name": ["Enumerator A"]}, index=[0])
+    message = "Check this value, then confirm the field's meaning."
+    issues = pd.DataFrame([{
+        "row_index": 0,
+        "uuid": "uuid-a",
+        "category": "text",
+        "field": "Local notes",
+        "severity": "warning",
+        "message": message,
+    }])
+
+    archive_bytes = enumerator_error_zip(source, issues)
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        names = archive.namelist()
+        assert names == ["01_Enumerator_A_errors.csv"]
+        raw = archive.read(names[0])
+        assert raw.startswith(bytes.fromhex("efbbbf"))
+        text = raw.decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
+
+    assert rows[0]["message"] == message
+    assert rows[0]["enumerator"] == "Enumerator A"
+    assert len(rows[0]) == len(text.splitlines()[0].split(";"))

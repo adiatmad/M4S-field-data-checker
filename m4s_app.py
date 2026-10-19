@@ -1546,18 +1546,18 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
-    report_workbook = enumerator_error_workbook(
+    report_zip = enumerator_error_zip(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
         include_text_formatting=include_text_formatting,
     )
     st.download_button(
-        "Download enumerator error logs (.xlsx)",
-        data=report_workbook,
-        file_name="m4s_enumerator_error_logs.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="A formatted Excel workbook with a summary and one filterable worksheet per enumerator. Findings are sorted by source row; photo URLs are clickable when available.",
+        "Download enumerator error logs (.zip)",
+        data=report_zip,
+        file_name="m4s_enumerator_error_logs.zip",
+        mime="application/zip",
+        help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
     )
 
     # ---- QUICK REFERENCE ----
