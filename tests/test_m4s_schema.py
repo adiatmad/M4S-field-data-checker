@@ -232,8 +232,7 @@ def test_gps_precision_column_is_optional_but_coordinates_are_still_checked(tmp_
 def test_species_selection_ad_to_aq_requires_matching_percentage_ar_to_be():
     from m4s_seagrass_qa import SPECIES_LIST, validate_species_logic
 
-    # Build a representative export with the requested Excel-column layout:
-    # AD:AQ = 14 species-selection fields; AR:BE = corresponding cover fields.
+    # AD:AQ = 14 species-selection fields; AR:BE = their corresponding cover fields.
     columns = [f"unused_{index}" for index in range(57)]
     for offset, species in enumerate(SPECIES_LIST):
         columns[29 + offset] = f"Seagrass species present in the Quadrat/{species}"
@@ -241,20 +240,24 @@ def test_species_selection_ad_to_aq_requires_matching_percentage_ar_to_be():
     frame = pd.DataFrame([{column: None for column in columns}], columns=columns)
     frame["_uuid"] = "positional-test"
     frame["Presence of Seagrass"] = "Yes"
-    selected = "Seagrass species present in the Quadrat/Halophila ovalis"
-    frame.at[0, selected] = 1
-    frame.at[0, "Percent Halophila ovalis (%)"] = None
+
+    # Every one of the 14 selection values is 1; every paired percentage is missing.
+    for species in SPECIES_LIST:
+        frame.at[0, f"Seagrass species present in the Quadrat/{species}"] = 1
 
     issues = validate_species_logic(frame)
-    assert any(
-        issue["row_index"] == 0
-        and issue["field"] == "Percent Halophila ovalis (%)"
-        and "marked present" in issue["message"]
-        for issue in issues
-    )
+    missing_cover_fields = {
+        issue["field"] for issue in issues
+        if issue["row_index"] == 0 and "marked present but no % cover recorded" in issue["message"]
+    }
+    expected_cover_fields = {f"Percent {species} (%)" for species in SPECIES_LIST}
+    assert missing_cover_fields == expected_cover_fields
 
-
-
+    # Supplying numeric cover values for every pair clears all missing-cover findings.
+    for species in SPECIES_LIST:
+        frame.at[0, f"Percent {species} (%)"] = 10
+    repaired_issues = validate_species_logic(frame)
+    assert not any("marked present but no % cover recorded" in issue["message"] for issue in repaired_issues)
 def test_correct_exposes_separate_conservative_match_thresholds():
     from m4s_seagrass_qa import correct
 

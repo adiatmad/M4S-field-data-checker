@@ -26,7 +26,7 @@ It does **not** know what every question in your survey means. For example, it c
 
 Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. GPS precision is optional in the input export: when absent, coordinate and site-distance checks still run. The app can also download separate enumerator error logs with direct Kobo photo URLs and optional GPS-accuracy/site-distance findings hidden from enumerator-facing reports. The report switches can independently include or hide GPS precision, site-distance, and Tetum/categorical text-variant findings. They are configuration controls, not role-based access control.
 
-These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
+Enumerator-name normalization and geography typo correction have separately configurable similarity thresholds in the M4S workflow. Higher thresholds are more conservative; review the correction log before using the cleaned output. These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
 
 ## What happens to my data?
 
