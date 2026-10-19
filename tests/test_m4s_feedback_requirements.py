@@ -5,7 +5,11 @@ import pandas as pd
 
 from m4s_seagrass_qa import (
     SPECIES_LIST,
+    _strip_all_strings,
     build_enumerator_error_logs,
+    correct,
+    standardize,
+    validate,
     enumerator_error_zip,
     filter_enumerator_report_issues,
     validate_coverage_mismatch,
@@ -94,3 +98,43 @@ def test_enumerator_report_can_hide_gps_accuracy_without_mutating_internal_issue
     assert len(filtered) == 1
     assert filtered.iloc[0]["message"] == "Missing GPS coordinates"
     assert len(issues) == 2
+
+
+def test_main_validation_pipeline_runs_coverage_mismatch_rule():
+    species = SPECIES_LIST[0]
+    frame = pd.DataFrame({
+        "start": ["2026-07-09 12:00:00"],
+        "end": ["2026-07-09 12:12:00"],
+        "Collector Name": ["Ari"],
+        "Date and time": ["2026-07-09 12:12:00"],
+        "Administration Post": ["Metinaro"],
+        "Village": ["Sabuli"],
+        "_Local GPS_latitude": [-8.51967],
+        "_Local GPS_longitude": [125.7174723],
+        "_Local GPS_precision": [4.0],
+        "_uuid": ["u1"],
+        "Transect Number": [1],
+        "Quadrat Number": [1],
+        "Presence of Seagrass": ["Yes"],
+        "Quadrat Photo_URL": ["https://kobo.example/photo"],
+        "General Condition": ["Healthy"],
+        f"Seagrass species present in the Quadrat/{species}": [1],
+        f"Percent {species} (%)": [20.0],
+        "Epicover Percentage (%)": [40.0],
+    })
+    issues = validate(standardize(frame))
+    assert any(issues["category"] == "coverage_mismatch")
+
+
+def test_basic_spacing_and_simple_enumerator_capitalization_are_corrected_and_logged():
+    source = pd.DataFrame({
+        "Collector Name": ["  john   doe  "],
+        "Administration Post": ["Metinaro"],
+        "Village": ["Sabuli"],
+        "_uuid": ["u1"],
+    })
+    spaced = _strip_all_strings(source.copy())
+    assert spaced.loc[0, "Collector Name"] == "john doe"
+    corrected, log = correct(spaced)
+    assert corrected.loc[0, "Collector Name"] == "John Doe"
+    assert "enumerator_name_formatting" in set(log["rule"])
