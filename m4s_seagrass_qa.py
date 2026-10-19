@@ -416,7 +416,9 @@ def validate_coverage_mismatch(df, tolerance=5):
 def _general_condition_column(df):
     """Find a known general-condition field without guessing arbitrary columns."""
     candidates = ["Seagrass General Condition", "General Condition",
-                  "General condition of seagrass", "Seagrass Condition"]
+                  "General condition of seagrass", "Seagrass Condition",
+                  "Kondisaun Jeral", "Kondisaun Geral",
+                  "Kondisaun Jeral Du'ut tasi", "Kondisaun Du'ut tasi"]
     normalized = {re.sub(r"[^a-z0-9]+", " ", str(c).casefold()).strip(): c for c in df.columns}
     for candidate in candidates:
         key = re.sub(r"[^a-z0-9]+", " ", candidate.casefold()).strip()
@@ -424,7 +426,9 @@ def _general_condition_column(df):
             return normalized[key]
     for column in df.columns:
         words = set(re.sub(r"[^a-z0-9]+", " ", str(column).casefold()).split())
-        if "general" in words and "condition" in words:
+        if ("general" in words and "condition" in words) or (
+            "kondisaun" in words and words.intersection({"jeral", "geral", "seagrass", "duut", "tasi"})
+        ):
             return column
     return None
 
@@ -784,6 +788,8 @@ def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     # Give each enumerator a separate, sortable error log with direct image URLs.
     enumerator_dir = out_dir / "enumerator_errors"
     enumerator_dir.mkdir(parents=True, exist_ok=True)
+    for previous_log in enumerator_dir.glob("*_errors.csv"):
+        previous_log.unlink()
     logs = build_enumerator_error_logs(clean_df, issues)
     for index, (name, frame) in enumerate(logs.items(), start=1):
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
