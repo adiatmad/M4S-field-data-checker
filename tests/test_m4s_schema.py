@@ -7,7 +7,7 @@ from m4s_seagrass_qa import (
     load_data,
     standardize,
     validate,
-    validate_text_capitalization,
+    validate_categorical_text_quality,
 )
 
 
@@ -177,7 +177,7 @@ def test_categorical_capitalization_variants_are_flagged_without_auto_correction
         "General Condition": ["Diak", "diak", "Diak"],
         "_uuid": ["one", "two", "three"],
     })
-    issues = validate_text_capitalization(frame)
+    issues = validate_categorical_text_quality(frame)
 
     assert len(issues) == 1
     assert issues[0]["row_index"] == 1
@@ -197,3 +197,16 @@ def test_enumerator_report_can_hide_text_formatting_findings_only():
     ])
     visible = filter_enumerator_report_issues(issues, include_text_formatting=False)
     assert visible["category"].tolist() == ["gps"]
+
+
+def test_tetum_categorical_spelling_variants_are_suggested_not_corrected():
+    frame = pd.DataFrame({
+        "General Condition": ["Diak", "Di'ak", "Diak", "Diak"],
+        "_uuid": ["one", "two", "three", "four"],
+    })
+    issues = validate_categorical_text_quality(frame)
+    spelling = [issue for issue in issues if "Possible spelling variant" in issue["message"]]
+
+    assert spelling
+    assert spelling[0]["row_index"] == 1
+    assert frame.loc[1, "General Condition"] == "Di'ak"
