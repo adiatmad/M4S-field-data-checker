@@ -248,16 +248,32 @@ def validate_gps(df):
     return issues
 
 
+def _species_is_selected(value):
+    if pd.isna(value):
+        return False
+    return str(value).strip().casefold() in {"1", "1.0", "true", "yes", "sim"}
+
+
 def validate_species_logic(df):
     issues = []
+    selection_columns = [f"Seagrass species present in the Quadrat/{sp}" for sp in SPECIES_LIST]
+    available_selection_columns = [col for col in selection_columns if col in df.columns]
+    if not available_selection_columns:
+        return [_new_issue(None, None, "schema", "Seagrass species", "error",
+                           "Required seagrass species-selection fields are missing from the export.")]
     for i, r in df.iterrows():
-        uid = r["_uuid"]
+        uid = r.get("_uuid")
         for sp in SPECIES_LIST:
             sel_col = f"Seagrass species present in the Quadrat/{sp}"
             pct_col = f"Percent {sp} (%)"
-            if sel_col not in df.columns or pct_col not in df.columns:
+            if sel_col not in df.columns:
                 continue
-            selected = r[sel_col] == 1
+            selected = _species_is_selected(r[sel_col])
+            if pct_col not in df.columns:
+                if selected:
+                    issues.append(_new_issue(i, uid, "species", pct_col, "error",
+                                              f"{sp} marked present but its percentage-cover column is missing from the export"))
+                continue
             pct = r[pct_col]
             if selected and (pd.isna(pct) or pct == 0):
                 issues.append(_new_issue(i, uid, "species", pct_col, "error",
@@ -269,16 +285,13 @@ def validate_species_logic(df):
                 issues.append(_new_issue(i, uid, "species", pct_col, "error",
                                           f"{sp} % cover {pct} outside 0-100 range"))
         presence = r.get("Presence of Seagrass")
-        any_species = any(
-            r.get(f"Seagrass species present in the Quadrat/{sp}") == 1
-            for sp in SPECIES_LIST
-        )
+        any_species = any(_species_is_selected(r.get(col)) for col in selection_columns if col in df.columns)
         if presence == "No" and any_species:
             issues.append(_new_issue(i, uid, "species", "Presence of Seagrass", "error",
                                       "Presence of Seagrass = No but species were recorded"))
         if presence == "Yes" and not any_species:
-            issues.append(_new_issue(i, uid, "species", "Presence of Seagrass", "warning",
-                                      "Presence of Seagrass = Yes but no species selected"))
+            issues.append(_new_issue(i, uid, "species", "Seagrass species", "error",
+                                      "Missing seagrass species: Presence of Seagrass = Yes but no species selected"))
     return issues
 
 
@@ -296,7 +309,8 @@ def validate_percent_fields(df):
 
 def validate_mandatory_fields(df):
     mandatory = ["Collector Name", "Date and time", "Transect Number",
-                 "Quadrat Number", "Presence of Seagrass", "_uuid"]
+                 "Quadrat Number", "Presence of Seagrass", "_uuid",
+                 "_Local GPS_latitude", "_Local GPS_longitude"]
     issues = []
     missing_columns = [field for field in mandatory if field not in df.columns]
     for field in missing_columns:
@@ -378,47 +392,145 @@ def validate_duplicate_submissions(df):
     return issues
 
 
-def validate_coverage_mismatch(df):
-    """
-    Check if individual species percentages add up to total epicover percentage.
-    Uses "Epicover Percentage (%)" as the reference column.
-    """
+def validate_coverage_mismatch(df, tolerance=5):
+    """Compare summed species cover with Epicover Percentage (%) within a 5-point tolerance."""
     issues = []
-    
-    # Get species percent columns
-    pct_cols = [col for col in df.columns if col.startswith("Percent ") and " (%)" in col]
-    # Use Epicover Percentage (%) as the reference column
+    pct_cols = [f"Percent {species} (%)" for species in SPECIES_LIST
+                if f"Percent {species} (%)" in df.columns]
     total_col = "Epicover Percentage (%)"
-    
-    if total_col in df.columns:
-        for i, r in df.iterrows():
-            total_cover = r[total_col]
-            if pd.isna(total_cover):
-                continue
-            
-            # Sum up individual species percentages
-            species_total = 0
-            for col in pct_cols:
-                val = r[col]
-                if pd.notna(val):
-                    species_total += val
-            
-            # Check if species total is significantly different from total cover
-            # Allow 5% tolerance for rounding/estimation errors
-            if abs(species_total - total_cover) > 5:
-                issues.append(_new_issue(
-                    i, r["_uuid"], "coverage_mismatch", total_col, "error",
-                    f"Individual species percentages sum to {species_total:.1f}% but Epicover Percentage is {total_cover:.1f}% (difference: {abs(species_total - total_cover):.1f}%)"
-                ))
-    
+    if total_col not in df.columns or not pct_cols:
+        return issues
+    for i, row in df.iterrows():
+        total_cover = row[total_col]
+        if pd.isna(total_cover):
+            continue
+        species_total = sum(float(row[col]) for col in pct_cols if pd.notna(row[col]))
+        difference = abs(species_total - float(total_cover))
+        if difference > tolerance:
+            issues.append(_new_issue(
+                i, row.get("_uuid"), "coverage_mismatch", total_col, "error",
+                f"Individual species percentages sum to {species_total:.1f}% but Epicover Percentage is {float(total_cover):.1f}% (difference: {difference:.1f}%; allowed tolerance: {tolerance:.1f} percentage points)"
+            ))
     return issues
+
+def _general_condition_column(df):
+    """Find a known general-condition field without guessing arbitrary columns."""
+    candidates = ["Seagrass General Condition", "General Condition",
+                  "General condition of seagrass", "Seagrass Condition",
+                  "Kondisaun Jeral", "Kondisaun Geral",
+                  "Kondisaun Jeral Du'ut tasi", "Kondisaun Du'ut tasi"]
+    normalized = {re.sub(r"[^a-z0-9]+", " ", str(c).casefold()).strip(): c for c in df.columns}
+    for candidate in candidates:
+        key = re.sub(r"[^a-z0-9]+", " ", candidate.casefold()).strip()
+        if key in normalized:
+            return normalized[key]
+    for column in df.columns:
+        words = set(re.sub(r"[^a-z0-9]+", " ", str(column).casefold()).split())
+        if ("general" in words and "condition" in words) or (
+            "kondisaun" in words and words.intersection({"jeral", "geral", "seagrass", "duut", "tasi"})
+        ):
+            return column
+    return None
+
+
+def validate_seagrass_general_condition(df):
+    """Flag a missing general-condition field or blank row values."""
+    field = _general_condition_column(df)
+    if field is None:
+        return [_new_issue(None, None, "schema", "Seagrass General Condition", "error",
+                           "Required field for seagrass general condition is missing from the export.")]
+    issues = []
+    for idx, row in df.iterrows():
+        value = row[field]
+        if pd.isna(value) or (isinstance(value, str) and not value.strip()):
+            issues.append(_new_issue(idx, row.get("_uuid"), "condition", field, "error",
+                                     "Missing seagrass general condition."))
+    return issues
+
+
+def _issue_export_frame(df, issues):
+    """Enrich findings with enumerator and direct Kobo image URL for field review."""
+    enriched = issues.copy()
+    if "enumerator" not in enriched.columns:
+        enriched["enumerator"] = ""
+    if "photo_url" not in enriched.columns:
+        enriched["photo_url"] = ""
+    if df is None or df.empty:
+        return enriched
+    enumerator_col = "Collector Name" if "Collector Name" in df.columns else None
+    photo_col = "Quadrat Photo_URL" if "Quadrat Photo_URL" in df.columns else None
+    for issue_index, issue in enriched.iterrows():
+        row_index = issue.get("row_index")
+        try:
+            source = df.loc[row_index]
+            if isinstance(source, pd.DataFrame):
+                source = source.iloc[0]
+        except (KeyError, TypeError, IndexError):
+            continue
+        if enumerator_col:
+            enriched.at[issue_index, "enumerator"] = source.get(enumerator_col, "")
+        if photo_col:
+            value = source.get(photo_col, "")
+            enriched.at[issue_index, "photo_url"] = "" if pd.isna(value) else str(value).strip()
+    return enriched
+
+
+def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, include_site_distance=True):
+    """Hide optional GPS-quality findings from enumerator reports without deleting internal findings."""
+    visible = issues.copy()
+    if not include_gps_accuracy and "field" in visible.columns:
+        precision = visible["field"].astype("string").str.contains("precision", case=False, na=False)
+        visible = visible.loc[~((visible["category"] == "gps") & precision)]
+    if not include_site_distance and "message" in visible.columns:
+        distance = visible["message"].astype("string").str.contains(
+            "centroid-distance threshold", case=False, na=False
+        )
+        visible = visible.loc[~((visible["category"] == "gps") & distance)]
+    return visible.reset_index(drop=True)
+
+
+def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, include_site_distance=True):
+    """Return one enriched CSV dataframe per enumerator, sorted by enumerator name."""
+    filtered = filter_enumerator_report_issues(
+        issues, include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+    )
+    enriched = _issue_export_frame(df, filtered)
+    if enriched.empty:
+        return {}
+    enriched["enumerator"] = enriched["enumerator"].fillna("").astype(str).str.strip()
+    enriched.loc[enriched["enumerator"].eq(""), "enumerator"] = "Unknown enumerator"
+    logs = {}
+    for name in sorted(enriched["enumerator"].unique(), key=str.casefold):
+        logs[name] = enriched.loc[enriched["enumerator"] == name].sort_values(
+            ["row_index", "severity"], kind="stable", na_position="last"
+        ).reset_index(drop=True)
+    return logs
+
+
+def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_distance=True):
+    """Build a ZIP of individual enumerator CSV error logs."""
+    import io
+    import zipfile
+
+    logs = build_enumerator_error_logs(
+        df, issues, include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for index, (name, frame) in enumerate(logs.items(), start=1):
+            safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
+            archive.writestr(f"{index:02d}_{safe}_errors.csv", frame.to_csv(index=False))
+    return buffer.getvalue()
 
 
 def validate(df) -> pd.DataFrame:
     all_issues = []
-    for fn in (validate_gps, validate_species_logic,
+    for fn in (validate_gps, validate_species_logic, validate_seagrass_general_condition,
                validate_percent_fields, validate_mandatory_fields, validate_numeric_parse,
-               validate_timestamps, validate_photos, validate_duplicate_submissions):
+               validate_timestamps, validate_photos, validate_duplicate_submissions,
+               validate_coverage_mismatch):
         all_issues.extend(fn(df))
     # Keep a stable schema even when no findings exist; report generation and CSV exports
     # must work for clean datasets too.
@@ -441,6 +553,7 @@ def add_qa_columns(df, issues):
         'qa_outside_boundary',
         'qa_duplicate_uuid',
         'qa_species_logic',
+        'qa_missing_general_condition',
         'qa_coverage_mismatch'
     ]
     
@@ -504,6 +617,10 @@ def add_qa_columns(df, issues):
                 else:
                     row_messages[row_idx].append(f"Species logic error: {message}")
                     
+            elif category == 'condition':
+                df_qa.at[row_idx, 'qa_missing_general_condition'] = 'Yes'
+                row_messages[row_idx].append(message)
+
             elif category == 'coverage_mismatch':
                 df_qa.at[row_idx, 'qa_coverage_mismatch'] = f"Yes - {message}"
                 # Use the full message from the issue
@@ -577,8 +694,15 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     before_fmt = df["Collector Name"].copy()
 
     def format_fix(v):
-        if isinstance(v, str) and "_" in v:
+        if not isinstance(v, str):
+            return v
+        if "_" in v:
             return v.replace("_", " ").title()
+        # Normalize only uniform all-lower/all-upper names; preserve intentional mixed case.
+        if v.isalpha() and (v.islower() or v.isupper()):
+            return v.title()
+        if v and (v.islower() or v.isupper()):
+            return v.title()
         return v
 
     df["Collector Name"] = df["Collector Name"].apply(format_fix)
@@ -659,15 +783,25 @@ def generate_qa_report(df, issues, correction_log, out_path):
 def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Add QA columns to the raw data before export
+
+    # Add QA columns to the raw data before export.
     raw_with_qa = add_qa_columns(raw_df, issues)
-    
     raw_with_qa.to_csv(out_dir / "raw_with_qa_flags.csv", index=False)
     clean_df.to_csv(out_dir / "clean_dataset.csv", index=False)
     issues.to_csv(out_dir / "qa_issues.csv", index=False)
     correction_log.to_csv(out_dir / "correction_log.csv", index=False)
     generate_qa_report(clean_df, issues, correction_log, out_dir / "qa_report.md")
+
+    # Give each enumerator a separate, sortable error log with direct image URLs.
+    enumerator_dir = out_dir / "enumerator_errors"
+    enumerator_dir.mkdir(parents=True, exist_ok=True)
+    for previous_log in enumerator_dir.glob("*_errors.csv"):
+        previous_log.unlink()
+    logs = build_enumerator_error_logs(clean_df, issues)
+    for index, (name, frame) in enumerate(logs.items(), start=1):
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
+        frame.to_csv(enumerator_dir / f"{index:02d}_{safe}_errors.csv", index=False)
+    (out_dir / "enumerator_error_logs.zip").write_bytes(enumerator_error_zip(clean_df, issues))
 
 
 # ENTRY POINT
