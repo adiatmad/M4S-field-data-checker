@@ -64,3 +64,24 @@ def test_invalid_approval_identifiers_are_rejected_without_applying_changes(appr
     with pytest.raises(ValueError, match="integer proposal IDs"):
         apply_approved_corrections(source, proposals, approved_ids)
     assert source.loc[0, "Village"] == "Sabulii"
+
+def test_separate_enumerator_and_geography_thresholds_are_respected():
+    source = pd.DataFrame({
+        "Collector Name": ["Ari_L", "Ari L"],
+        "Administration Post": ["Metinara", "Metinaro"],
+    })
+
+    proposals = suggest_corrections(
+        source, enumerator_threshold=80, geography_threshold=100
+    )
+
+    assert "Collector Name" in set(proposals["field"])
+    assert "Administration Post" not in set(proposals["field"])
+
+
+def test_separate_correction_thresholds_are_validated():
+    source = pd.DataFrame({"Collector Name": ["Ari_L", "Ari L"]})
+    with pytest.raises(ValueError, match="Enumerator threshold"):
+        suggest_corrections(source, enumerator_threshold=79)
+    with pytest.raises(ValueError, match="Geography threshold"):
+        suggest_corrections(source, geography_threshold=101)

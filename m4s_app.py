@@ -15,6 +15,7 @@ import re
 import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
+from correction_review import apply_approved_corrections, suggest_corrections
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -602,6 +603,49 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
         for index, (name, frame) in enumerate(logs.items(), start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
             archive.writestr(f"{index:02d}_{safe}_errors.csv", frame.to_csv(index=False))
+    return buffer.getvalue()
+
+
+def enumerator_error_workbook(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
+                             include_text_formatting=True):
+    """Build one Excel workbook with a summary and one findings sheet per enumerator."""
+    logs = build_enumerator_error_logs(
+        df, issues, include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    summary_rows = []
+    for name, frame in logs.items():
+        severity = frame.get("severity", pd.Series(dtype="string")).astype("string").str.casefold()
+        summary_rows.append({
+            "Enumerator": name,
+            "Findings": len(frame),
+            "Errors": int((severity == "error").sum()),
+            "Warnings": int((severity == "warning").sum()),
+        })
+    summary = pd.DataFrame(summary_rows, columns=["Enumerator", "Findings", "Errors", "Warnings"])
+    if summary.empty:
+        summary = pd.DataFrame([{
+            "Enumerator": "No findings for the selected report options",
+            "Findings": 0, "Errors": 0, "Warnings": 0,
+        }])
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        summary.to_excel(writer, sheet_name="Summary", index=False)
+        used_names = {"summary"}
+        for name, frame in logs.items():
+            base = str(name).strip("' ") or "Enumerator"
+            for forbidden in "[]:*?/\\\\":
+                base = base.replace(forbidden, "_")
+            candidate = base[:31]
+            suffix = 2
+            while candidate.casefold() in used_names:
+                marker = f"_{suffix}"
+                candidate = f"{base[:31-len(marker)]}{marker}"
+                suffix += 1
+            used_names.add(candidate.casefold())
+            frame.to_excel(writer, sheet_name=candidate, index=False)
     return buffer.getvalue()
 
 
@@ -1556,6 +1600,45 @@ else:
             file_name="clean_dataset.csv"
         )
     
+    # ---- HUMAN-REVIEWED CORRECTION PROPOSALS (same upload, same workflow) ----
+    st.divider()
+    with st.expander("Review suggested name and geography corrections", expanded=False):
+        st.caption("Review these proposals in the same workflow as the QA findings. Nothing in this section changes the source upload; only explicitly selected proposals are applied to a downloadable copy.")
+        proposals = suggest_corrections(
+            df,
+            enumerator_threshold=enumerator_match_threshold,
+            geography_threshold=geography_match_threshold,
+        )
+        if proposals.empty:
+            st.success("No candidate name or geography corrections were found at the selected thresholds.")
+        else:
+            st.warning("Similarity is not proof. Verify proposed names and site labels with the field team before approving them.")
+            approved_ids = []
+            for _, proposal in proposals.iterrows():
+                label = (
+                    f"{proposal['field']}: {proposal['current_value']!r} → "
+                    f"{proposal['suggested_value']!r} "
+                    f"({proposal['similarity']}% similarity; {proposal['affected_rows']} rows)"
+                )
+                if st.checkbox(label, key=f"integrated_correction_{int(proposal['proposal_id'])}"):
+                    approved_ids.append(int(proposal["proposal_id"]))
+                st.caption(proposal["reason"])
+            if st.button("Apply selected corrections to a review copy", type="primary", disabled=not approved_ids):
+                reviewed_df, approved_log = apply_approved_corrections(df, proposals, approved_ids)
+                st.success(f"Prepared a review copy with {len(approved_log)} row-level changes. The uploaded source remains unchanged.")
+                st.dataframe(reviewed_df, use_container_width=True)
+                st.download_button(
+                    "Download reviewed dataset (CSV)", reviewed_df.to_csv(index=False).encode("utf-8"),
+                    file_name="m4s_corrected_reviewed.csv", mime="text/csv",
+                    key="integrated_reviewed_dataset_download",
+                )
+                st.dataframe(approved_log, use_container_width=True)
+                st.download_button(
+                    "Download approved-correction audit log (CSV)", approved_log.to_csv(index=False).encode("utf-8"),
+                    file_name="m4s_approved_correction_log.csv", mime="text/csv",
+                    key="integrated_reviewed_log_download",
+                )
+
     # ---- ENUMERATOR-SPECIFIC ERROR EXPORTS ----
     st.divider()
     st.subheader("Enumerator-specific error reports")
@@ -1588,6 +1671,19 @@ else:
         file_name="m4s_enumerator_error_logs.zip",
         mime="application/zip",
         help="Each CSV contains only findings for one enumerator, sorted by source row.",
+    )
+    report_workbook = enumerator_error_workbook(
+        clean_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download Excel workbook — one sheet per enumerator",
+        data=report_workbook,
+        file_name="m4s_enumerator_error_reports.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Includes a summary sheet plus a separate worksheet for each enumerator, with findings and Kobo photo URLs when available.",
     )
 
     # ---- QUICK REFERENCE ----
