@@ -47,7 +47,7 @@ The optional Streamlit page at `pages/1_Review_M4S_Corrections.py` generates can
 
 The M4S workflow can produce one CSV per enumerator, sorted by enumerator name, with row-level findings and a photo_url column sourced from the Kobo Quadrat Photo_URL field. If no URL exists in the source export, the field remains blank. The ZIP export is generated locally in the current app process. GPS precision and site-distance findings can be hidden from enumerator-facing reports without deleting them from the full internal findings. These UI switches are not authentication or authorization; deployments needing administrator-only controls must add access control separately.
 
-Basic string whitespace trimming and whitespace collapsing are performed during standardization. Existing logged formatting corrections remain limited to configured enumerator/geography fields; the checker does not automatically title-case arbitrary ecological values or scientific names.
+Basic string whitespace trimming and whitespace collapsing are performed during standardization. Enumerator-name normalization and geography typo correction use separate configurable similarity thresholds (80–100) in the Streamlit M4S workflow; higher values are more conservative. Corrections remain logged for review. The checker does not automatically title-case arbitrary ecological values or scientific names.
 
 
 ## Tetum and categorical text cleaning
