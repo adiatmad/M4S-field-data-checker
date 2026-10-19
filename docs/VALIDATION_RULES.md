@@ -33,3 +33,18 @@ This opt-in generic check compares distinct text values only in columns with 2â€
 ## Review-before-apply corrections
 
 The optional Streamlit page at `pages/1_Review_M4S_Corrections.py` generates candidate spelling corrections without mutating source values. Only individually approved proposal IDs are applied, and every changed row is recorded in an audit log. The feature does not replace the existing legacy correction pipeline; use the review page when human approval is required. Similarity is not evidence that two collector names refer to the same person.
+
+
+## M4S conditional seagrass checks
+
+- If a species is selected as present (including numeric/string encodings of 1), its corresponding species-cover percentage must be recorded and non-zero. If the species selection field exists but its cover column is absent, the record is flagged.
+- If overall seagrass presence is Yes but no species is selected, the row is an error.
+- A seagrass general-condition field must exist and have a nonblank value. The checker recognizes a short list of English and Tetun header variants; confirm the actual field label against the active Kobo XLSForm.
+- Missing latitude or longitude is an error. GPS precision and site-distance checks are separate reportable findings.
+- Individual species percentages are summed and compared with Epicover Percentage (%) using a 5-percentage-point tolerance. This is a project assumption, not a universal ecological rule; confirm the total field and tolerance with the approved M4S protocol.
+
+## Enumerator error exports
+
+The M4S workflow can produce one CSV per enumerator, sorted by enumerator name, with row-level findings and a photo_url column sourced from the Kobo Quadrat Photo_URL field. If no URL exists in the source export, the field remains blank. The ZIP export is generated locally in the current app process. GPS precision and site-distance findings can be hidden from enumerator-facing reports without deleting them from the full internal findings. These UI switches are not authentication or authorization; deployments needing administrator-only controls must add access control separately.
+
+Basic string whitespace trimming and whitespace collapsing are performed during standardization. Existing logged formatting corrections remain limited to configured enumerator/geography fields; the checker does not automatically title-case arbitrary ecological values or scientific names.
