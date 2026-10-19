@@ -600,27 +600,12 @@ def add_qa_columns(df, issues):
                 dup_count = (df['_uuid'] == df_qa.at[row_idx, '_uuid']).sum()
                 row_messages[row_idx].append(f"Duplicate submission - same UUID appears {dup_count} times in the dataset.")
                 
-            elif category == 'species' and 'marked present but no % cover recorded' in message:
+            elif category == 'species':
+                # Every species rule must reach the row-level flag and Message column,
+                # including missing species selections and missing percentage columns.
                 df_qa.at[row_idx, 'qa_species_logic'] = 'Yes'
-                # Extract species name
-                import re
-                species_match = re.search(r"(.*?) marked present", message)
-                if species_match:
-                    species = species_match.group(1)
-                    row_messages[row_idx].append(f"Species logic error: {species} marked present but 0% cover recorded.")
-                else:
-                    row_messages[row_idx].append(f"Species logic error: {message}")
-                    
-            elif category == 'species' and '% cover recorded for' in message:
-                df_qa.at[row_idx, 'qa_species_logic'] = 'Yes'
-                import re
-                species_match = re.search(r"% cover recorded for (.*?) but", message)
-                if species_match:
-                    species = species_match.group(1)
-                    row_messages[row_idx].append(f"Species logic error: {species} has % cover recorded but species not marked present.")
-                else:
-                    row_messages[row_idx].append(f"Species logic error: {message}")
-                    
+                row_messages[row_idx].append(f"Species logic error: {message}")
+
             elif category == 'condition':
                 df_qa.at[row_idx, 'qa_missing_general_condition'] = 'Yes'
                 row_messages[row_idx].append(message)

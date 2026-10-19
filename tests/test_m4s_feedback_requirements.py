@@ -6,6 +6,7 @@ import pandas as pd
 from m4s_seagrass_qa import (
     SPECIES_LIST,
     _strip_all_strings,
+    add_qa_columns,
     build_enumerator_error_logs,
     correct,
     standardize,
@@ -138,3 +139,18 @@ def test_basic_spacing_and_simple_enumerator_capitalization_are_corrected_and_lo
     corrected, log = correct(spaced)
     assert corrected.loc[0, "Collector Name"] == "John Doe"
     assert "enumerator_name_formatting" in set(log["rule"])
+
+
+def test_missing_species_findings_appear_in_row_flags_and_message_column():
+    source = pd.DataFrame({"_uuid": ["u1"], "Collector Name": ["Ari"]})
+    issues = pd.DataFrame([{
+        "row_index": 0,
+        "uuid": "u1",
+        "category": "species",
+        "field": "Seagrass species",
+        "severity": "error",
+        "message": "Missing seagrass species: Presence of Seagrass = Yes but no species selected",
+    }])
+    result = add_qa_columns(source, issues)
+    assert result.loc[0, "qa_species_logic"] == "Yes"
+    assert "Missing seagrass species" in result.loc[0, "Message"]
