@@ -252,3 +252,26 @@ def test_species_selection_ad_to_aq_requires_matching_percentage_ar_to_be():
         and "marked present" in issue["message"]
         for issue in issues
     )
+
+
+
+def test_correct_exposes_separate_conservative_match_thresholds():
+    from m4s_seagrass_qa import correct
+
+    frame = pd.DataFrame({
+        "Collector Name": ["Alice", "Alicee"],
+        "Administration Post": ["Metinaro", "Metinara"],
+        "Village": ["Sabuli", "Sabuli"],
+        "_uuid": ["one", "two"],
+    })
+
+    corrected, _ = correct(
+        frame,
+        enumerator_match_threshold=100,
+        geography_match_threshold=100,
+    )
+    assert corrected.loc[1, "Collector Name"] == "Alicee"
+    assert corrected.loc[1, "Administration Post"] == "Metinara"
+
+    with pytest.raises(ValueError, match="threshold must be an integer from 80 to 100"):
+        correct(frame, enumerator_match_threshold=79)
