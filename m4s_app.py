@@ -737,7 +737,11 @@ def _fuzzy_canonicalize(series: pd.Series, threshold: int) -> tuple[pd.Series, d
     return corrected, mapping
 
 
-def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def correct(df: pd.DataFrame, *, enumerator_match_threshold: int = ENUMERATOR_MATCH_THRESHOLD,
+            geography_match_threshold: int = GEO_MATCH_THRESHOLD) -> tuple[pd.DataFrame, pd.DataFrame]:
+    for label, threshold in (("enumerator", enumerator_match_threshold), ("geography", geography_match_threshold)):
+        if isinstance(threshold, bool) or not isinstance(threshold, int) or not 80 <= threshold <= 100:
+            raise ValueError(f"{label.capitalize()} match threshold must be an integer from 80 to 100.")
     df = df.copy()
     log_rows = []
 
@@ -750,7 +754,7 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                                   timestamp=datetime.now(timezone.utc).isoformat()))
 
     # Safe correction 1: enumerator name normalization
-    corrected, mapping = _fuzzy_canonicalize(df["Collector Name"], ENUMERATOR_MATCH_THRESHOLD)
+    corrected, mapping = _fuzzy_canonicalize(df["Collector Name"], enumerator_match_threshold)
     changed_mask = (df["Collector Name"] != corrected) & df["Collector Name"].notna()
     log_change(changed_mask, "Collector Name", mapping, "enumerator_name_normalization")
     df["Collector Name"] = corrected
@@ -786,7 +790,7 @@ def correct(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             if pd.isna(v) or v == canon:
                 return v
             score = fuzz.token_sort_ratio(str(v).lower(), canon.lower())
-            return canon if score >= ENUMERATOR_MATCH_THRESHOLD else v
+            return canon if score >= geography_match_threshold else v
         df[field] = df[field].apply(fix)
         changed_mask = before_col != df[field]
         for i in df.index[changed_mask]:
@@ -1317,6 +1321,20 @@ else:
         st.info("Start by uploading the Excel (.xlsx) file exported from KoboToolbox for the M4S seagrass survey. Your results will appear here after the checks finish.")
         st.stop()
     
+    # Keep data-cleaning thresholds visible and adjustable instead of hiding them as constants.
+    with st.expander("Enumerator and geography cleaning parameters", expanded=False):
+        st.caption("Higher similarity thresholds are more conservative and reduce automatic name/geography corrections.")
+        enumerator_match_threshold = st.slider(
+            "Enumerator-name similarity threshold",
+            min_value=80, max_value=100, value=ENUMERATOR_MATCH_THRESHOLD, step=1,
+            help="Minimum fuzzy-match score before enumerator names are grouped for normalization.",
+        )
+        geography_match_threshold = st.slider(
+            "Geography typo-correction threshold",
+            min_value=80, max_value=100, value=GEO_MATCH_THRESHOLD, step=1,
+            help="Minimum fuzzy-match score before Administration Post or Village is corrected.",
+        )
+
     # Run each stage separately so failures stop the workflow without exposing a traceback.
     with st.spinner("Running QA pipeline..."):
         try:
@@ -1360,7 +1378,10 @@ else:
             st.stop()
 
         try:
-            clean_df, correction_log = correct(df)
+            clean_df, correction_log = correct(
+                df, enumerator_match_threshold=enumerator_match_threshold,
+                geography_match_threshold=geography_match_threshold,
+            )
         except Exception:
             st.error(
                 "M4S QA could not complete the correction stage. No results are available. "
