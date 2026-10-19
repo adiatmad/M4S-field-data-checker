@@ -772,15 +772,23 @@ def generate_qa_report(df, issues, correction_log, out_path):
 def export_outputs(raw_df, clean_df, issues, correction_log, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Add QA columns to the raw data before export
+
+    # Add QA columns to the raw data before export.
     raw_with_qa = add_qa_columns(raw_df, issues)
-    
     raw_with_qa.to_csv(out_dir / "raw_with_qa_flags.csv", index=False)
     clean_df.to_csv(out_dir / "clean_dataset.csv", index=False)
     issues.to_csv(out_dir / "qa_issues.csv", index=False)
     correction_log.to_csv(out_dir / "correction_log.csv", index=False)
     generate_qa_report(clean_df, issues, correction_log, out_dir / "qa_report.md")
+
+    # Give each enumerator a separate, sortable error log with direct image URLs.
+    enumerator_dir = out_dir / "enumerator_errors"
+    enumerator_dir.mkdir(parents=True, exist_ok=True)
+    logs = build_enumerator_error_logs(clean_df, issues)
+    for index, (name, frame) in enumerate(logs.items(), start=1):
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
+        frame.to_csv(enumerator_dir / f"{index:02d}_{safe}_errors.csv", index=False)
+    (out_dir / "enumerator_error_logs.zip").write_bytes(enumerator_error_zip(clean_df, issues))
 
 
 # ENTRY POINT
