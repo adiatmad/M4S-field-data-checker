@@ -16,6 +16,7 @@ import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
 from correction_review import apply_approved_corrections, suggest_corrections
+from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -520,133 +521,6 @@ def validate_seagrass_general_condition(df):
             issues.append(_new_issue(idx, row.get("_uuid"), "condition", field, "error",
                                      "Missing seagrass general condition."))
     return issues
-
-
-def _issue_export_frame(df, issues):
-    """Enrich findings with enumerator and direct Kobo image URL for field review."""
-    enriched = issues.copy()
-    if "enumerator" not in enriched.columns:
-        enriched["enumerator"] = ""
-    if "photo_url" not in enriched.columns:
-        enriched["photo_url"] = ""
-    if df is None or df.empty:
-        return enriched
-    enumerator_col = "Collector Name" if "Collector Name" in df.columns else None
-    photo_col = "Quadrat Photo_URL" if "Quadrat Photo_URL" in df.columns else None
-    for issue_index, issue in enriched.iterrows():
-        row_index = issue.get("row_index")
-        try:
-            source = df.loc[row_index]
-            if isinstance(source, pd.DataFrame):
-                source = source.iloc[0]
-        except (KeyError, TypeError, IndexError):
-            continue
-        if enumerator_col:
-            enriched.at[issue_index, "enumerator"] = source.get(enumerator_col, "")
-        if photo_col:
-            value = source.get(photo_col, "")
-            enriched.at[issue_index, "photo_url"] = "" if pd.isna(value) else str(value).strip()
-    return enriched
-
-
-def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, include_site_distance=True,
-                                      include_text_formatting=True):
-    """Filter optional GPS/text-cleaning findings from enumerator reports only."""
-    visible = issues.copy()
-    if not include_text_formatting and "category" in visible.columns:
-        visible = visible.loc[visible["category"] != "text_formatting"]
-    if not include_gps_accuracy and "field" in visible.columns:
-        precision = visible["field"].astype("string").str.contains("precision", case=False, na=False)
-        visible = visible.loc[~((visible["category"] == "gps") & precision)]
-    if not include_site_distance and "message" in visible.columns:
-        distance = visible["message"].astype("string").str.contains(
-            "centroid-distance threshold", case=False, na=False
-        )
-        visible = visible.loc[~((visible["category"] == "gps") & distance)]
-    return visible.reset_index(drop=True)
-
-
-def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
-                               include_text_formatting=True):
-    """Return one enriched CSV dataframe per enumerator, sorted by enumerator name."""
-    filtered = filter_enumerator_report_issues(
-        issues, include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    enriched = _issue_export_frame(df, filtered)
-    if enriched.empty:
-        return {}
-    enriched["enumerator"] = enriched["enumerator"].fillna("").astype(str).str.strip()
-    enriched.loc[enriched["enumerator"].eq(""), "enumerator"] = "Unknown enumerator"
-    logs = {}
-    for name in sorted(enriched["enumerator"].unique(), key=str.casefold):
-        logs[name] = enriched.loc[enriched["enumerator"] == name].sort_values(
-            ["row_index", "severity"], kind="stable", na_position="last"
-        ).reset_index(drop=True)
-    return logs
-
-
-def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
-                        include_text_formatting=True):
-    """Build a ZIP of individual enumerator CSV error logs."""
-    import io
-    import zipfile
-
-    logs = build_enumerator_error_logs(
-        df, issues, include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for index, (name, frame) in enumerate(logs.items(), start=1):
-            safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
-            archive.writestr(f"{index:02d}_{safe}_errors.csv", frame.to_csv(index=False))
-    return buffer.getvalue()
-
-
-def enumerator_error_workbook(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
-                             include_text_formatting=True):
-    """Build one Excel workbook with a summary and one findings sheet per enumerator."""
-    logs = build_enumerator_error_logs(
-        df, issues, include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    summary_rows = []
-    for name, frame in logs.items():
-        severity = frame.get("severity", pd.Series(dtype="string")).astype("string").str.casefold()
-        summary_rows.append({
-            "Enumerator": name,
-            "Findings": len(frame),
-            "Errors": int((severity == "error").sum()),
-            "Warnings": int((severity == "warning").sum()),
-        })
-    summary = pd.DataFrame(summary_rows, columns=["Enumerator", "Findings", "Errors", "Warnings"])
-    if summary.empty:
-        summary = pd.DataFrame([{
-            "Enumerator": "No findings for the selected report options",
-            "Findings": 0, "Errors": 0, "Warnings": 0,
-        }])
-
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        summary.to_excel(writer, sheet_name="Summary", index=False)
-        used_names = {"summary"}
-        for name, frame in logs.items():
-            base = str(name).strip("' ") or "Enumerator"
-            for forbidden in "[]:*?/\\\\":
-                base = base.replace(forbidden, "_")
-            candidate = base[:31]
-            suffix = 2
-            while candidate.casefold() in used_names:
-                marker = f"_{suffix}"
-                candidate = f"{base[:31-len(marker)]}{marker}"
-                suffix += 1
-            used_names.add(candidate.casefold())
-            frame.to_excel(writer, sheet_name=candidate, index=False)
-    return buffer.getvalue()
 
 
 def validate(df) -> pd.DataFrame:
@@ -1672,19 +1546,6 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
-    report_zip = enumerator_error_zip(
-        clean_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    st.download_button(
-        "Download ZIP of individual enumerator error logs",
-        data=report_zip,
-        file_name="m4s_enumerator_error_logs.zip",
-        mime="application/zip",
-        help="Each CSV contains only findings for one enumerator, sorted by source row.",
-    )
     report_workbook = enumerator_error_workbook(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1692,11 +1553,11 @@ else:
         include_text_formatting=include_text_formatting,
     )
     st.download_button(
-        "Download Excel workbook — one sheet per enumerator",
+        "Download enumerator error logs (.xlsx)",
         data=report_workbook,
-        file_name="m4s_enumerator_error_reports.xlsx",
+        file_name="m4s_enumerator_error_logs.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="Includes a summary sheet plus a separate worksheet for each enumerator, with findings and Kobo photo URLs when available.",
+        help="A formatted Excel workbook with a summary and one filterable worksheet per enumerator. Findings are sorted by source row; photo URLs are clickable when available.",
     )
 
     # ---- QUICK REFERENCE ----
