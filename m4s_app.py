@@ -1561,9 +1561,8 @@ else:
         help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
     )
 
-    # This is the field team's working copy: preserve the uploaded source columns and
-    # all records for each enumerator, then append QA messages and any missing cover
-    # entry column identified by species-selection checks.
+    # This is the field team's working copy: preserve all source rows and columns,
+    # then append only row-aligned ERROR messages. Warnings stay out of this export.
     raw_data_zip = enumerator_raw_data_zip(
         raw_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1571,11 +1570,11 @@ else:
         include_text_formatting=include_text_formatting,
     )
     st.download_button(
-        "Download full raw data + QA messages per enumerator (.zip)",
+        "Download full raw data + error messages per enumerator (.zip)",
         data=raw_data_zip,
-        file_name="m4s_enumerator_raw_data_with_qa.zip",
+        file_name="m4s_enumerator_raw_data_with_errors.zip",
         mime="application/zip",
-        help="One CSV per enumerator with all original source columns and rows, plus QA Message, QA Fields to Check, and QA Severity. Missing species-cover fields are added as blank columns so they can be filled after photo review. Open CSVs directly in Excel on Windows.",
+        help="One CSV per enumerator with all original source rows and columns, plus one Error Message column containing errors only (no warnings). Blank source headers are labeled by Excel column position, without guessing their meaning. CSVs use a UTF-8 BOM and semicolon delimiter for Excel on Windows.",
     )
 
     # ---- QUICK REFERENCE ----
