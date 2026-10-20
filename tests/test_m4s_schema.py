@@ -307,3 +307,23 @@ def test_correct_exposes_separate_conservative_match_thresholds():
 
     with pytest.raises(ValueError, match="threshold must be an integer from 80 to 100"):
         correct(frame, enumerator_match_threshold=79)
+
+
+def test_correct_stage_logs_changes_when_optional_uuid_column_is_absent():
+    from m4s_seagrass_qa import correct
+
+    frame = pd.DataFrame({
+        "Collector Name": ["alice", "Alice"],
+        "Administration Post": ["metinaro", "Metinara"],
+        "Village": ["Sabuli", "Sabuli"],
+    })
+    original = frame.copy(deep=True)
+
+    corrected, correction_log = correct(frame)
+
+    assert corrected.loc[0, "Collector Name"] == "Alice"
+    assert corrected.loc[0, "Administration Post"] == "Metinaro"
+    assert not correction_log.empty
+    assert "uuid" in correction_log.columns
+    assert correction_log["uuid"].isna().all()
+    pd.testing.assert_frame_equal(frame, original)
