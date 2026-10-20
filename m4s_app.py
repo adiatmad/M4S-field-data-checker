@@ -1542,7 +1542,7 @@ else:
     # ---- ENUMERATOR-SPECIFIC ERROR EXPORTS ----
     st.divider()
     st.subheader("Enumerator-specific error reports")
-    st.caption("Downloads one CSV per enumerator. Each finding includes the direct Kobo photo URL when the export contains one. These switches affect only enumerator-facing reports; the full internal QA findings remain unchanged.")
+    st.caption("Downloads one Excel workbook per enumerator. Each finding includes the direct Kobo photo URL when the export contains one. These switches affect only enumerator-facing reports; the full internal QA findings remain unchanged.")
     include_gps_accuracy = st.checkbox(
         "Include GPS precision / accuracy checks in enumerator reports",
         value=True,
@@ -1570,7 +1570,7 @@ else:
         data=report_zip,
         file_name="m4s_enumerator_error_logs.zip",
         mime="application/zip",
-        help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
+        help="A ZIP containing one .xlsx workbook per enumerator, with filters, a frozen header row, and clickable Kobo photo links where available.",
     )
 
     # This is the field team's working copy: preserve all source rows and columns,
@@ -1586,7 +1586,7 @@ else:
         data=raw_data_zip,
         file_name="m4s_enumerator_raw_data_with_errors.zip",
         mime="application/zip",
-        help="One CSV per enumerator with all original source rows and columns, plus one Error Message column containing errors only (no warnings). Blank source headers are labeled by Excel column position, without guessing their meaning. CSVs use a UTF-8 BOM and semicolon delimiter for Excel on Windows.",
+        help="One .xlsx workbook per enumerator with all original source rows and columns, plus one Error Message column containing errors only (no warnings). Blank source headers are labeled by Excel column position, without guessing their meaning. Headers are frozen and columns are filterable.",
     )
 
     # ---- QUICK REFERENCE ----

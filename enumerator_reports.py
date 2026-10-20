@@ -74,10 +74,76 @@ def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, includ
     return logs
 
 
+def _error_frame_xlsx(frame: pd.DataFrame) -> bytes:
+    """Serialize one enumerator's findings with Excel filters and readable columns."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    display_columns = {
+        "row_index": "Source row",
+        "uuid": "Submission UUID",
+        "category": "Issue category",
+        "field": "Field to check",
+        "severity": "Severity",
+        "message": "Finding / suggested action",
+        "photo_url": "Kobo photo URL",
+    }
+    preferred = ["row_index", "uuid", "severity", "category", "field", "message", "photo_url"]
+    ordered = [column for column in preferred if column in frame.columns]
+    ordered += [column for column in frame.columns if column not in ordered and column != "enumerator"]
+    sheet_frame = frame.loc[:, ordered].rename(columns=display_columns)
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        sheet_frame.to_excel(writer, sheet_name="Findings", index=False)
+        worksheet = writer.book["Findings"]
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+        worksheet.sheet_view.showGridLines = False
+        header_fill = PatternFill("solid", fgColor="1F4E78")
+        header_font = Font(color="FFFFFF", bold=True)
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+        headers = {cell.value: cell.column for cell in worksheet[1]}
+        for column_cells in worksheet.columns:
+            letter = get_column_letter(column_cells[0].column)
+            header = str(column_cells[0].value or "")
+            sample = [len(str(cell.value or "")) for cell in column_cells[:200]]
+            width = min(max(max(sample, default=10) + 2, 12), 52)
+            if header in ("Finding / suggested action", "Kobo photo URL"):
+                width = 48
+            elif header in ("Submission UUID", "Enumerator"):
+                width = 28
+            worksheet.column_dimensions[letter].width = width
+            for cell in column_cells[1:]:
+                cell.alignment = Alignment(vertical="top", wrap_text=(header == "Finding / suggested action"))
+        photo_column = headers.get("Kobo photo URL")
+        if photo_column:
+            for row in worksheet.iter_rows(min_row=2):
+                cell = row[photo_column - 1]
+                url = str(cell.value or "").strip()
+                if url.startswith(("https://", "http://")):
+                    cell.hyperlink = url
+                    cell.style = "Hyperlink"
+        severity_column = headers.get("Severity")
+        if severity_column:
+            for row in worksheet.iter_rows(min_row=2):
+                cell = row[severity_column - 1]
+                severity = str(cell.value or "").casefold()
+                if severity == "error":
+                    cell.fill = PatternFill("solid", fgColor="FCE4D6")
+                    cell.font = Font(color="9C0006", bold=True)
+                elif severity == "warning":
+                    cell.fill = PatternFill("solid", fgColor="FFF2CC")
+                    cell.font = Font(color="9C6500", bold=True)
+    return buffer.getvalue()
+
+
 def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
                         include_text_formatting=True):
-    """Build a ZIP of individual enumerator CSV error logs."""
-    import io
+    """Build a ZIP of individual enumerator XLSX error logs."""
     import zipfile
 
     logs = build_enumerator_error_logs(
@@ -89,10 +155,7 @@ def enumerator_error_zip(df, issues, *, include_gps_accuracy=True, include_site_
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, (name, frame) in enumerate(logs.items(), start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
-            csv_text = frame.to_csv(index=False, sep=";")
-            # Excel on Windows often uses the regional list separator for double-click CSV opening.
-            # A UTF-8 BOM preserves non-ASCII field text in Excel.
-            archive.writestr(f"{index:02d}_{safe}_errors.csv", "\ufeff" + csv_text)
+            archive.writestr(f"{index:02d}_{safe}_errors.xlsx", _error_frame_xlsx(frame))
     return buffer.getvalue()
 
 
