@@ -1,4 +1,4 @@
-"""Full-record enumerator exports that preserve the uploaded Kobo columns."""
+"""Full-record enumerator exports with one row-aligned error-message column."""
 
 from __future__ import annotations
 
@@ -10,37 +10,41 @@ import pandas as pd
 
 from enumerator_reports import filter_enumerator_report_issues
 
-# Labels used by the current M4S Kobo form when a species-cover question is absent
-# from an export. Ho is explicitly included because field reviewers identify it by
-# this abbreviation in the survey workflow.
-SPECIES_COVER_SOURCE_HEADERS = {
-    "Halophila ovalis": "Persentajen (Ho) Halophila ovalis (%)",
-    "Halophila minor": "Persentajen (Hm) Halophila minor (%)",
-    "Halodule pinifolia": "Persentajen Halodule pinifolia (%)",
-    "Halodule uninervis": "Persentajen (Hu) Halodule uninervis (%)",
-    "Halophila decipiens": "Persentajen (Hd) Halophila decipiens (%)",
-    "Halophila beccarii": "Persentajen (Hb) Halophila beccarii (%)",
-    "Halophila spinulosa": "Persentajen (Hs) Halophila spinulosa (%)",
-    "Enhalus acoroides": "Persentajen (Ea) Enhalus acoroides (%)",
-    "Thalassia hemprichii": "Persentajen (Th) Thalassia hemprichii (%)",
-    "Cymodocea rotundata": "Persentajen (Cr) Cymodocea rotundata (%)",
-    "Cymodocea serrulata": "Persentajen (Cs) Cymodocea serrulata (%)",
-    "Syringodium isoetifolium": "Persentajen (Si) Syringodium isoetifolium (%)",
-    "Ruppia maritima": "Persentajen (Rm) Ruppia maritima (%)",
-    "Thalassodendron ciliatum": "Persentajen (Tc) Thalassodendron ciliatum (%)",
-}
-
 ENUMERATOR_HEADERS = ("Naran Koletor", "Collector Name", "Enumerator", "enumerator")
-CANONICAL_PERCENT_RE = re.compile(r"^Percent (.+) \(%\)$")
+ERROR_COLUMN = "Error Message"
 
 
 def _find_column(columns, candidates):
-    normalized = {re.sub(r"\s+", " ", str(column)).strip().casefold(): column for column in columns}
+    normalized = {
+        re.sub(r"\s+", " ", str(column)).strip().casefold(): column
+        for column in columns
+    }
     for candidate in candidates:
         key = re.sub(r"\s+", " ", candidate).strip().casefold()
         if key in normalized:
             return normalized[key]
     return None
+
+
+def _excel_column_name(index: int) -> str:
+    """Convert a zero-based column index to its Excel letter (0 -> A, 70 -> BS)."""
+    number = index + 1
+    letters = ""
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+def _make_blank_headers_explicit(columns):
+    """Label genuinely blank headers by position; never guess their meaning."""
+    output = []
+    for index, column in enumerate(columns):
+        if column is None or (isinstance(column, str) and not column.strip()):
+            output.append(f"Unnamed: {_excel_column_name(index)}")
+        else:
+            output.append(column)
+    return output
 
 
 def build_enumerator_raw_exports(
@@ -51,67 +55,56 @@ def build_enumerator_raw_exports(
     include_site_distance: bool = True,
     include_text_formatting: bool = True,
 ) -> dict[str, pd.DataFrame]:
-    """Preserve every source column and row, adding actionable QA columns per enumerator."""
+    """Preserve all source rows/columns and append only row-aligned error messages.
+
+    Warnings and informational findings are deliberately excluded. Blank source
+    headers are given positional placeholder names (for example, Unnamed: BS)
+    so exported CSVs do not contain unlabeled columns; no domain meaning is inferred.
+    """
     if raw_df is None:
         raise ValueError("Raw source data is required.")
     result = raw_df.copy()
+    result.columns = _make_blank_headers_explicit(result.columns)
+    if ERROR_COLUMN in result.columns:
+        raise ValueError(
+            f"The source already contains a {ERROR_COLUMN!r} column; refusing to overwrite source data."
+        )
+
     filtered = filter_enumerator_report_issues(
-        issues, include_gps_accuracy=include_gps_accuracy,
+        issues,
+        include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
         include_text_formatting=include_text_formatting,
     )
-    # When a selected species has no cover question in the export, add an empty
-    # entry column so the field team has an actual place to enter the missing value.
-    if not filtered.empty and {"category", "field", "message"}.issubset(filtered.columns):
-        missing_cover = filtered[
-            filtered["category"].eq("species")
-            & filtered["message"].astype("string").str.contains(
-                "percentage-cover column is missing from the export", case=False, na=False
-            )
+    if not filtered.empty and "severity" in filtered.columns:
+        filtered = filtered.loc[
+            filtered["severity"].astype("string").str.casefold().eq("error")
         ]
-        for field in missing_cover["field"].dropna().astype(str).unique():
-            match = CANONICAL_PERCENT_RE.match(field)
-            if not match:
-                continue
-            species = match.group(1)
-            source_header = SPECIES_COVER_SOURCE_HEADERS.get(species, field)
-            if _find_column(result.columns, [source_header, field]) is None:
-                result[source_header] = pd.NA
 
-    for column in ("QA Message", "QA Fields to Check", "QA Severity"):
-        result[column] = ""
-
-    if not filtered.empty:
+    result[ERROR_COLUMN] = ""
+    if not filtered.empty and {"row_index", "message"}.issubset(filtered.columns):
         messages = {}
-        fields = {}
-        severities = {}
         for _, issue in filtered.iterrows():
             idx = issue.get("row_index")
             if pd.isna(idx) or idx not in result.index:
+                # A schema-level error without a source-row reference cannot be
+                # safely attached to a particular raw record.
                 continue
             message = str(issue.get("message", "") or "").strip()
-            field = str(issue.get("field", "") or "").strip()
-            severity = str(issue.get("severity", "") or "").strip().upper()
             if message:
                 messages.setdefault(idx, []).append(message)
-            if field and field not in fields.setdefault(idx, []):
-                fields[idx].append(field)
-            if severity:
-                severities.setdefault(idx, set()).add(severity)
         for idx, items in messages.items():
-            result.at[idx, "QA Message"] = " | ".join(dict.fromkeys(items))
-        for idx, items in fields.items():
-            result.at[idx, "QA Fields to Check"] = "; ".join(items)
-        for idx, items in severities.items():
-            order = [value for value in ("ERROR", "WARNING", "INFO") if value in items]
-            result.at[idx, "QA Severity"] = "; ".join(order)
+            result.at[idx, ERROR_COLUMN] = " | ".join(dict.fromkeys(items))
 
     enumerator_col = _find_column(result.columns, ENUMERATOR_HEADERS)
     if enumerator_col is None:
-        result["QA Enumerator"] = "Unknown enumerator"
-        enumerator_col = "QA Enumerator"
-    names = result[enumerator_col].fillna("").astype(str).str.strip()
-    names = names.mask(names.eq(""), "Unknown enumerator")
+        # Do not append a helper column to the raw export. Keep all records in a
+        # single explicit bucket when the source has no recognized enumerator field.
+        names = pd.Series("Unknown enumerator", index=result.index)
+    else:
+        names = result[enumerator_col].fillna("").astype(str).str.strip()
+        names = names.mask(names.eq(""), "Unknown enumerator")
+
     exports = {}
     for name in sorted(names.unique(), key=str.casefold):
         exports[name] = result.loc[names.eq(name)].copy()
@@ -119,16 +112,14 @@ def build_enumerator_raw_exports(
 
 
 def enumerator_raw_data_zip(raw_df, issues, **options) -> bytes:
-    """Create one Excel-friendly CSV per enumerator, retaining the complete raw row."""
+    """Create one Excel-friendly, error-only CSV per enumerator."""
     exports = build_enumerator_raw_exports(raw_df, issues, **options)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, (name, frame) in enumerate(exports.items(), start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
-            # Semicolon delimiter + BOM supports direct double-click opening in Excel
-            # on common Windows regional settings, consistent with the existing error ZIP.
             archive.writestr(
-                f"{index:02d}_{safe}_raw_with_QA.csv",
+                f"{index:02d}_{safe}_raw_with_errors.csv",
                 "\ufeff" + frame.to_csv(index=False, sep=";"),
             )
     return buffer.getvalue()
