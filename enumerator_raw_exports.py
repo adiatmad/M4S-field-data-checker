@@ -117,15 +117,50 @@ def build_enumerator_raw_exports(
     return exports
 
 
+def _raw_frame_xlsx(frame: pd.DataFrame) -> bytes:
+    """Serialize a raw enumerator export as a directly usable Excel workbook."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        frame.to_excel(writer, sheet_name="Raw data", index=False)
+        worksheet = writer.book["Raw data"]
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+        worksheet.sheet_view.showGridLines = False
+        header_fill = PatternFill("solid", fgColor="1F4E78")
+        header_font = Font(color="FFFFFF", bold=True)
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for column_cells in worksheet.columns:
+            letter = get_column_letter(column_cells[0].column)
+            header = str(column_cells[0].value or "")
+            sample = [len(str(cell.value or "")) for cell in column_cells[:200]]
+            width = min(max(max(sample, default=10) + 2, 12), 48)
+            if header == ERROR_COLUMN:
+                width = 52
+            worksheet.column_dimensions[letter].width = width
+            for cell in column_cells[1:]:
+                cell.alignment = Alignment(vertical="top", wrap_text=(header == ERROR_COLUMN))
+                value = str(cell.value or "").strip()
+                if value.startswith(("https://", "http://")):
+                    cell.hyperlink = value
+                    cell.style = "Hyperlink"
+    return buffer.getvalue()
+
+
 def enumerator_raw_data_zip(raw_df, issues, **options) -> bytes:
-    """Create one Excel-friendly, error-only CSV per enumerator."""
+    """Create a ZIP containing one XLSX workbook per enumerator."""
     exports = build_enumerator_raw_exports(raw_df, issues, **options)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, (name, frame) in enumerate(exports.items(), start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "enumerator"
             archive.writestr(
-                f"{index:02d}_{safe}_raw_with_errors.csv",
-                "\ufeff" + frame.to_csv(index=False, sep=";"),
+                f"{index:02d}_{safe}_raw_with_errors.xlsx",
+                _raw_frame_xlsx(frame),
             )
     return buffer.getvalue()
