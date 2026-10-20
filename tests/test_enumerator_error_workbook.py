@@ -78,8 +78,7 @@ def test_enumerator_error_workbook_handles_no_findings():
 
 
 
-def test_enumerator_error_zip_csv_opens_as_excel_friendly_semicolon_table():
-    import csv
+def test_enumerator_error_zip_contains_directly_openable_xlsx():
     import zipfile
 
     source = pd.DataFrame({"Collector Name": ["Enumerator A"]}, index=[0])
@@ -96,12 +95,12 @@ def test_enumerator_error_zip_csv_opens_as_excel_friendly_semicolon_table():
     archive_bytes = enumerator_error_zip(source, issues)
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         names = archive.namelist()
-        assert names == ["01_Enumerator_A_errors.csv"]
-        raw = archive.read(names[0])
-        assert raw.startswith(bytes.fromhex("efbbbf"))
-        text = raw.decode("utf-8-sig")
-        rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
+        assert names == ["01_Enumerator_A_errors.xlsx"]
+        workbook = load_workbook(io.BytesIO(archive.read(names[0])), data_only=True)
 
-    assert rows[0]["message"] == message
-    assert rows[0]["enumerator"] == "Enumerator A"
-    assert len(rows[0]) == len(text.splitlines()[0].split(";"))
+    sheet = workbook["Findings"]
+    headers = [cell.value for cell in sheet[1]]
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref == sheet.dimensions
+    assert sheet.cell(2, headers.index("Finding / suggested action") + 1).value == message
+    assert sheet.cell(2, headers.index("Source row") + 1).value == 0
