@@ -154,12 +154,13 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read a raw Kobo export and return (untouched raw data, canonical working copy)."""
     raw = pd.read_excel(path)
     working = _canonicalize_form_columns(raw)
+    # Kobo exports can omit system metadata such as start/end/_uuid.
+    # These fields support optional duration/duplicate checks, not core survey QA.
     required = [
-        "start", "end", "Collector Name", "Date and time",
+        "Collector Name", "Date and time",
         "Administration Post", "Village", "_Local GPS_latitude",
-        "_Local GPS_longitude", "_uuid",
-        "Transect Number", "Quadrat Number", "Presence of Seagrass",
-        "Quadrat Photo_URL",
+        "_Local GPS_longitude", "Transect Number", "Quadrat Number",
+        "Presence of Seagrass", "Quadrat Photo_URL",
     ]
     missing = [c for c in required if c not in working.columns]
     if missing:
@@ -189,7 +190,11 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
     for col in ["start", "end", "Date and time", "_submission_time"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
-    df["_duration_seconds"] = (df["end"] - df["start"]).dt.total_seconds()
+    if "start" in df.columns and "end" in df.columns:
+        df["_duration_seconds"] = (df["end"] - df["start"]).dt.total_seconds()
+    else:
+        # Without Kobo start/end metadata, duration cannot be evaluated.
+        df["_duration_seconds"] = pd.Series(np.nan, index=df.index, dtype="float64")
     numeric_like = [c for c in df.columns if "(%)" in c or c in (
         "Water Level (Cm)", "_Local GPS_latitude", "_Local GPS_longitude",
         "_Local GPS_altitude", "_Local GPS_precision",
@@ -230,7 +235,7 @@ def _haversine_m(lat1, lon1, lat2, lon2):
 def validate_gps(df):
     issues = []
     for i, r in df.iterrows():
-        uid = r["_uuid"]
+        uid = r.get("_uuid")
         lat, lon = r["_Local GPS_latitude"], r["_Local GPS_longitude"]
         prec = r.get("_Local GPS_precision", np.nan)
         if pd.isna(lat) or pd.isna(lon):
@@ -255,7 +260,7 @@ def validate_gps(df):
     coord_cols = ["_Local GPS_latitude", "_Local GPS_longitude"]
     dup_mask = df.duplicated(subset=coord_cols, keep=False) & df[coord_cols].notna().all(axis=1)
     for i, r in df[dup_mask].iterrows():
-        issues.append(_new_issue(i, r["_uuid"], "gps", "_Local GPS", "warning",
+        issues.append(_new_issue(i, r.get("_uuid"), "gps", "_Local GPS", "warning",
                                   "Coordinates are identical to another record; check whether GPS was refreshed between quadrats."))
     return issues
 
@@ -378,7 +383,7 @@ def validate_percent_fields(df):
         for c in pct_cols:
             v = r[c]
             if pd.notna(v) and (v < 0 or v > 100):
-                issues.append(_new_issue(i, r["_uuid"], "logic", c, "error",
+                issues.append(_new_issue(i, r.get("_uuid"), "logic", c, "error",
                                           f"{c} = {v}, outside 0-100 range"))
     return issues
 
@@ -421,20 +426,22 @@ def validate_numeric_parse(df):
 
 def validate_timestamps(df):
     issues = []
+    if "start" not in df.columns or "end" not in df.columns:
+        return issues
     for i, r in df.iterrows():
         dur = r["_duration_seconds"]
         if pd.isna(dur):
-            issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "error",
+            issues.append(_new_issue(i, r.get("_uuid"), "logic", "start/end", "error",
                                       "start/end timestamp missing or unparsable"))
             continue
         if dur <= 0:
-            issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "error",
+            issues.append(_new_issue(i, r.get("_uuid"), "logic", "start/end", "error",
                                       "End time is before or equal to start time"))
         elif dur < DURATION_TOO_FAST_S:
-            issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
+            issues.append(_new_issue(i, r.get("_uuid"), "logic", "start/end", "warning",
                                       f"Survey completed in {dur:.0f} s: unusually fast; check for auto-fill."))
         elif dur > DURATION_LONG_SESSION_S:
-            issues.append(_new_issue(i, r["_uuid"], "logic", "start/end", "warning",
+            issues.append(_new_issue(i, r.get("_uuid"), "logic", "start/end", "warning",
                                       f"Session lasted {dur/3600:.1f} h: the form may have been left open or resumed later."))
     return issues
 
@@ -455,15 +462,18 @@ def validate_photos(df):
 
 def validate_duplicate_submissions(df):
     issues = []
-    dup = df.duplicated(subset=["_uuid"], keep=False)
-    for i, r in df[dup].iterrows():
-        issues.append(_new_issue(i, r["_uuid"], "duplicate", "_uuid", "error",
-                                  "Duplicate _uuid: the same submission may have been ingested twice."))
+    # Do not treat a missing UUID column (or blank UUID values) as duplicate submissions.
+    if "_uuid" in df.columns:
+        has_uuid = df["_uuid"].notna() & df["_uuid"].astype(str).str.strip().ne("")
+        dup = df.loc[has_uuid].duplicated(subset=["_uuid"], keep=False)
+        for i, r in df.loc[has_uuid].loc[dup].iterrows():
+            issues.append(_new_issue(i, r.get("_uuid"), "duplicate", "_uuid", "error",
+                                      "Duplicate _uuid: the same submission may have been ingested twice."))
     logical_key = ["Collector Name", "Transect Number", "Quadrat Number", "Date and time"]
     if all(k in df.columns for k in logical_key):
         dup2 = df.duplicated(subset=logical_key, keep=False)
         for i, r in df[dup2].iterrows():
-            issues.append(_new_issue(i, r["_uuid"], "duplicate", "combo", "warning",
+            issues.append(_new_issue(i, r.get("_uuid"), "duplicate", "combo", "warning",
                                       "Same collector, transect, quadrat, and date as another record: possible re-entry."))
     return issues
 
