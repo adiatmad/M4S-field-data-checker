@@ -16,22 +16,11 @@ import pandera.pandas as pa
 from frictionless import validate as frictionless_validate
 from rapidfuzz import fuzz, process
 from correction_review import apply_approved_corrections, suggest_corrections
+from dataframe_exports import dataframe_to_xlsx
 from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
 from enumerator_raw_exports import enumerator_raw_data_zip
 from qa_message_localization import localize_qa_issue_messages
 
-
-def dataframe_to_xlsx(frame: pd.DataFrame, *, sheet_name: str = "Data") -> bytes:
-    """Serialize a dataframe as a real XLSX workbook for Excel-friendly downloads."""
-    buffer = io.BytesIO()
-    safe_sheet_name = sheet_name[:31] or "Data"
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        frame.to_excel(writer, sheet_name=safe_sheet_name, index=False)
-        worksheet = writer.book[safe_sheet_name]
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
-        worksheet.sheet_view.showGridLines = False
-    return buffer.getvalue()
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -1507,7 +1496,15 @@ else:
     
     with tab_clean:
         st.caption(f"Preview: first {min(10, len(clean_df))} of {len(clean_df):,} dataset rows. Download the Excel workbook for the complete dataset.")
-        st.dataframe(clean_df.head(10), width='stretch', hide_index=True)
+        clean_preview = clean_df.head(10).copy()
+        # Streamlit/PyArrow cannot infer one Arrow type for mixed numeric/text IDs.
+        # Cast only the preview's mixed object columns; downloaded XLSX data stays unchanged.
+        for column in clean_preview.columns:
+            if clean_preview[column].dtype == object:
+                clean_preview[column] = clean_preview[column].map(
+                    lambda value: value if pd.isna(value) else str(value)
+                )
+        st.dataframe(clean_preview, width='stretch', hide_index=True)
         st.download_button(
             "Download clean dataset (.xlsx)",
             dataframe_to_xlsx(clean_df, sheet_name="Clean dataset"),
