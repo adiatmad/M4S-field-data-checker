@@ -89,3 +89,20 @@ def test_enumerator_findings_localize_only_recognized_survey_errors():
         "Unsupported Kobo form schema",
     ]
     assert issues.loc[0, "message"] == "Missing GPS coordinates"
+
+
+
+def test_gps_precision_error_is_translated_but_keeps_exact_original():
+    original = "GPS precision 31.0 m: unusable; record location manually"
+    assert format_qa_error_message(original, "gps", "error") == (
+        "Presizaun GPS 31.0 m la bele uza; rejista lokalizasaun manualmente "
+        "(GPS precision 31.0 m: unusable; record location manually)"
+    )
+
+
+def test_unparseable_survey_timestamp_error_is_translated():
+    original = "start/end timestamp missing or unparsable"
+    assert format_qa_error_message(original, "logic", "error") == (
+        "Oras hahú/remata falta ka la bele lee "
+        "(start/end timestamp missing or unparsable)"
+    )
