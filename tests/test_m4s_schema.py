@@ -89,6 +89,35 @@ def test_load_data_accepts_current_tetun_export_and_preserves_raw_copy(tmp_path)
     assert len(raw) == len(working) == 1
 
 
+def test_load_data_accepts_export_without_optional_kobo_metadata(tmp_path):
+    source = tetun_export_frame().drop(columns=["start", "end", "_uuid"])
+    source["_index"] = [1]
+    path = tmp_path / "tetun_export_without_metadata.xlsx"
+    source.to_excel(path, index=False)
+
+    raw, working = load_data(str(path))
+    assert "_index" in raw.columns
+    assert "_index" in working.columns
+    assert "start" not in working.columns
+    assert "end" not in working.columns
+    assert "_uuid" not in working.columns
+
+    standardized = standardize(working)
+    issues = validate(standardized)
+    assert "_duration_seconds" in standardized.columns
+    assert standardized["_duration_seconds"].isna().all()
+    assert not any(issue["field"] == "start/end" for issue in issues.to_dict("records"))
+
+
+def test_missing_uuid_does_not_create_false_duplicate_findings():
+    from m4s_seagrass_qa import validate_duplicate_submissions
+
+    frame = _canonicalize_form_columns(tetun_export_frame().drop(columns=["_uuid"]))
+    frame = pd.concat([frame, frame], ignore_index=True)
+    issues = validate_duplicate_submissions(frame)
+    assert not any(issue["field"] == "_uuid" for issue in issues)
+
+
 def test_load_data_still_rejects_missing_required_fields(tmp_path):
     path = tmp_path / "incomplete.xlsx"
     pd.DataFrame({"start": ["2026-07-09"], "_uuid": ["x"]}).to_excel(path, index=False)
