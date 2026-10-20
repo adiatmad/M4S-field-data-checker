@@ -54,3 +54,38 @@ def test_mandatory_field_translation_keeps_field_name_and_english_original():
         "Koluna obrigatóriu 'Quadrat Number' falta ka mamuk "
         "(Mandatory field 'Quadrat Number' is missing or blank)"
     )
+
+
+
+def test_enumerator_raw_error_export_uses_tetum_plus_english_without_changing_columns():
+    from enumerator_raw_exports import build_enumerator_raw_exports
+
+    raw = pd.DataFrame({"Naran Koletor": ["Ana"], "answer": ["x"]})
+    issues = pd.DataFrame([{
+        "row_index": 0, "uuid": "u1", "category": "gps", "field": "_Local GPS",
+        "severity": "error", "message": "Missing GPS coordinates",
+    }])
+    exported = build_enumerator_raw_exports(raw, issues)["Ana"]
+
+    assert exported.columns.tolist() == ["Naran Koletor", "answer", "Error Message"]
+    assert exported.loc[0, "Error Message"] == "Koordenada GPS falta (Missing GPS coordinates)"
+
+
+def test_enumerator_findings_localize_only_recognized_survey_errors():
+    from enumerator_reports import build_enumerator_error_logs
+
+    source = pd.DataFrame({"Collector Name": ["Ana"], "Quadrat Photo_URL": ["https://example.test/photo"]})
+    issues = pd.DataFrame([
+        {"row_index": 0, "uuid": "u1", "category": "gps", "field": "_Local GPS",
+         "severity": "error", "message": "Missing GPS coordinates"},
+        {"row_index": 0, "uuid": "u1", "category": "schema", "field": "schema",
+         "severity": "error", "message": "Unsupported Kobo form schema"},
+    ])
+    logs = build_enumerator_error_logs(source, issues)
+    messages = logs["Ana"]["message"].tolist()
+
+    assert messages == [
+        "Koordenada GPS falta (Missing GPS coordinates)",
+        "Unsupported Kobo form schema",
+    ]
+    assert issues.loc[0, "message"] == "Missing GPS coordinates"
