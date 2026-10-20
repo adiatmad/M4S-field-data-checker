@@ -56,7 +56,7 @@ def test_error_log_zip_keeps_technical_messages_in_english():
 
     payload = enumerator_error_zip(source, issues)
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-        workbook = load_workbook(io.BytesIO(archive.read(archive.namelist()[0]), data_only=True)
+        workbook = load_workbook(io.BytesIO(archive.read(archive.namelist()[0])), data_only=True)
     sheet = workbook["Findings"]
     headers = [cell.value for cell in sheet[1]]
     assert sheet.cell(2, headers.index("Finding / suggested action") + 1).value == (
