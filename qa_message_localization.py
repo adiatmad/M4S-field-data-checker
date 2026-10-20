@@ -23,6 +23,7 @@ _EXACT_TRANSLATIONS = {
     "Presence of Seagrass = No but species were recorded": "Prezensa du'ut tasi = No, maibé rejistu ona espésie.",
     "Missing seagrass species: Presence of Seagrass = Yes but no species selected": "Espésie du'ut tasi falta: Prezensa du'ut tasi = Yes, maibé la hili espésie ida.",
     "End time is before or equal to start time": "Oras remata antes ka hanesan ho oras hahú",
+    "start/end timestamp missing or unparsable": "Oras hahú/remata falta ka la bele lee",
     "Duplicate _uuid: the same submission may have been ingested twice.": "UUID repetidu: rejistu ida-ne'e bele tama dala rua.",
     "Key value duplicates another record; verify before changing either row.": "Valor xave hanesan ho rejistu seluk; verifika molok muda rejistu ida.",
 }
@@ -43,6 +44,10 @@ def _translate_message(message: str) -> str | None:
     match = re.fullmatch(r"Required column is missing", message)
     if match:
         return "Koluna obrigatóriu falta"
+
+    match = re.fullmatch(r"GPS precision ([0-9.]+) m: unusable; record location manually", message)
+    if match:
+        return f"Presizaun GPS {match.group(1)} m la bele uza; rejista lokalizasaun manualmente"
 
     match = re.fullmatch(r"Nonblank value (.+) is not a valid number", message)
     if match:
