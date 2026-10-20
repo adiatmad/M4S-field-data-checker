@@ -9,6 +9,7 @@ import zipfile
 import pandas as pd
 
 from enumerator_reports import filter_enumerator_report_issues
+from qa_message_localization import format_qa_error_message
 
 ENUMERATOR_HEADERS = ("Naran Koletor", "Collector Name", "Enumerator", "enumerator")
 ERROR_COLUMN = "Error Message"
@@ -95,6 +96,7 @@ def build_enumerator_raw_exports(
                 # safely attached to a particular raw record.
                 continue
             message = str(issue.get("message", "") or "").strip()
+            message = format_qa_error_message(message, issue.get("category"), issue.get("severity"))
             if message:
                 messages.setdefault(idx, []).append(message)
         for idx, items in messages.items():
