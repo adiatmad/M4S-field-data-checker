@@ -1573,6 +1573,22 @@ else:
         help="A ZIP containing one CSV per enumerator. CSVs use a semicolon delimiter and UTF-8 BOM to improve opening in Excel by double-clicking on Windows.",
     )
 
+    # Excel-native alternative: one workbook with a summary and a separate sheet
+    # for each enumerator. Keep the existing per-enumerator CSV ZIP for compatibility.
+    report_workbook = enumerator_error_workbook(
+        clean_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download enumerator error reports (Excel .xlsx)",
+        data=report_workbook,
+        file_name="m4s_enumerator_error_reports.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="One Excel workbook with a Summary sheet and one findings sheet per enumerator. The existing CSV ZIP remains available below.",
+    )
+
     # This is the field team's working copy: preserve all source rows and columns,
     # then append only row-aligned ERROR messages. Warnings stay out of this export.
     raw_data_zip = enumerator_raw_data_zip(
