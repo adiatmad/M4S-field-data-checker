@@ -21,6 +21,19 @@ from enumerator_raw_exports import enumerator_raw_data_zip
 from qa_message_localization import localize_qa_issue_messages
 
 
+def dataframe_to_xlsx(frame: pd.DataFrame, *, sheet_name: str = "Data") -> bytes:
+    """Serialize a dataframe as a real XLSX workbook for Excel-friendly downloads."""
+    buffer = io.BytesIO()
+    safe_sheet_name = re.sub(r"[\\\\/?*\\[\\]:]", "_", sheet_name)[:31] or "Data"
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        frame.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+        worksheet = writer.book[safe_sheet_name]
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+        worksheet.sheet_view.showGridLines = False
+    return buffer.getvalue()
+
+
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
 
 # M4S Streamlit entry point; see README.md for user instructions.
@@ -1222,13 +1235,15 @@ def render_generic_csv_checker():
     else:
         categories = st.multiselect("Filter categories", sorted(findings["category"].dropna().unique()), key="generic_categories")
         visible = findings[findings["category"].isin(categories)] if categories else findings
-        st.caption(f"Preview: first {min(10, len(visible))} of {len(visible):,} findings. Download the CSV for the complete filtered findings.")
+        st.caption(f"Preview: first {min(10, len(visible))} of {len(visible):,} findings. Download the Excel workbook for the complete filtered findings.")
         st.dataframe(visible.head(10), use_container_width=True, hide_index=True)
-        st.download_button("Download findings CSV", visible.to_csv(index=False).encode("utf-8"),
-                           file_name="kobo_csv_findings.csv", mime="text/csv")
+        st.download_button("Download findings (.xlsx)", dataframe_to_xlsx(visible, sheet_name="Findings"),
+                           file_name="kobo_csv_findings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     with st.expander("Preview input (first 100 rows)"):
         st.dataframe(frame.head(100), use_container_width=True, hide_index=True)
-    st.download_button("Download unchanged input CSV", data=data, file_name=uploaded_csv.name, mime="text/csv")
+    st.download_button("Download input data (.xlsx)", dataframe_to_xlsx(frame, sheet_name="Input data"),
+                        file_name=f"{pathlib.Path(uploaded_csv.name).stem}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
@@ -1416,21 +1431,22 @@ else:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
-            "Download raw data with QA flags and messages",
-            raw_with_qa.to_csv(index=False),
-            file_name="raw_with_qa_flags.csv"
+            "Download raw data with QA flags and messages (.xlsx)",
+            dataframe_to_xlsx(raw_with_qa, sheet_name="Raw data with QA"),
+            file_name="raw_with_qa_flags.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     with col2:
         st.download_button(
-            "Download QA issues list",
-            issues.to_csv(index=False),
-            file_name="qa_issues.csv"
+            "Download QA issues list (.xlsx)",
+            dataframe_to_xlsx(issues, sheet_name="QA issues"),
+            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     with col3:
         st.download_button(
-            "Download filtered view",
-            display_df.to_csv(index=False),
-            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            "Download filtered view (.xlsx)",
+            dataframe_to_xlsx(display_df, sheet_name="Filtered data"),
+            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     table_config = {
@@ -1472,30 +1488,30 @@ else:
         st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
     
     with tab_issues:
-        st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the CSV for the full issue list.")
+        st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the Excel workbook for the full issue list.")
         st.dataframe(display_issues.head(10), width='stretch', hide_index=True)
         st.download_button(
-            "Download QA issues CSV",
-            display_issues.to_csv(index=False),
-            file_name="qa_issues.csv"
+            "Download QA issues (.xlsx)",
+            dataframe_to_xlsx(display_issues, sheet_name="QA issues"),
+            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
     with tab_corrections:
-        st.caption(f"Preview: first {min(10, len(correction_log))} of {len(correction_log):,} correction-log rows. Download the CSV for the full log.")
+        st.caption(f"Preview: first {min(10, len(correction_log))} of {len(correction_log):,} correction-log rows. Download the Excel workbook for the full log.")
         st.dataframe(correction_log.head(10), width='stretch', hide_index=True)
         st.download_button(
-            "Download correction log CSV",
-            correction_log.to_csv(index=False),
-            file_name="correction_log.csv"
+            "Download correction log (.xlsx)",
+            dataframe_to_xlsx(correction_log, sheet_name="Correction log"),
+            file_name="correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
     with tab_clean:
-        st.caption(f"Preview: first {min(10, len(clean_df))} of {len(clean_df):,} dataset rows. Download the CSV for the complete dataset.")
+        st.caption(f"Preview: first {min(10, len(clean_df))} of {len(clean_df):,} dataset rows. Download the Excel workbook for the complete dataset.")
         st.dataframe(clean_df.head(10), width='stretch', hide_index=True)
         st.download_button(
-            "Download clean dataset CSV",
-            clean_df.to_csv(index=False),
-            file_name="clean_dataset.csv"
+            "Download clean dataset (.xlsx)",
+            dataframe_to_xlsx(clean_df, sheet_name="Clean dataset"),
+            file_name="clean_dataset.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
     # ---- HUMAN-REVIEWED CORRECTION PROPOSALS (same upload, same workflow) ----
@@ -1527,15 +1543,15 @@ else:
                 st.caption(f"Preview: first {min(10, len(reviewed_df))} of {len(reviewed_df):,} rows. The download contains the full reviewed dataset.")
                 st.dataframe(reviewed_df.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
-                    "Download reviewed dataset (CSV)", reviewed_df.to_csv(index=False).encode("utf-8"),
-                    file_name="m4s_corrected_reviewed.csv", mime="text/csv",
+                    "Download reviewed dataset (.xlsx)", dataframe_to_xlsx(reviewed_df, sheet_name="Reviewed dataset"),
+                    file_name="m4s_corrected_reviewed.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_dataset_download",
                 )
                 st.caption(f"Preview: first {min(10, len(approved_log))} of {len(approved_log):,} approved changes. The download contains the full audit log.")
                 st.dataframe(approved_log.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
-                    "Download approved-correction audit log (CSV)", approved_log.to_csv(index=False).encode("utf-8"),
-                    file_name="m4s_approved_correction_log.csv", mime="text/csv",
+                    "Download approved-correction audit log (.xlsx)", dataframe_to_xlsx(approved_log, sheet_name="Approved corrections"),
+                    file_name="m4s_approved_correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_log_download",
                 )
 
