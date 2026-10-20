@@ -102,8 +102,10 @@ def test_raw_export_keeps_rows_when_no_errors_and_excludes_warnings():
     assert exported.columns.tolist() == ["Collector Name", "source_value", "Error Message"]
 
 
-def test_zip_contains_per_enumerator_error_only_csv_with_excel_friendly_encoding():
-    raw = pd.DataFrame({"Collector Name": ["Ana"], "answer": ["sí"]})
+def test_zip_contains_per_enumerator_xlsx_with_excel_filters_and_preserved_values():
+    from openpyxl import load_workbook
+
+    raw = pd.DataFrame({"Collector Name": ["Ana"], "answer": ["sí"], "photo_URL": ["https://example.test/photo"]})
     issues = pd.DataFrame([
         {"row_index": 0, "uuid": "u1", "category": "required", "field": "answer",
          "severity": "error", "message": "Check answer"}
@@ -113,9 +115,13 @@ def test_zip_contains_per_enumerator_error_only_csv_with_excel_friendly_encoding
 
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         names = archive.namelist()
-        assert names == ["01_Ana_raw_with_errors.csv"]
+        assert names == ["01_Ana_raw_with_errors.xlsx"]
         content = archive.read(names[0])
-    assert content.startswith(b"\xef\xbb\xbf")
-    frame = pd.read_csv(io.BytesIO(content), sep=";", encoding="utf-8-sig")
-    assert frame.columns.tolist() == ["Collector Name", "answer", "Error Message"]
-    assert frame.loc[0, "Error Message"] == "Check answer"
+    workbook = load_workbook(io.BytesIO(content), data_only=True)
+    sheet = workbook["Raw data"]
+    assert [cell.value for cell in sheet[1]] == ["Collector Name", "answer", "photo_URL", "Error Message"]
+    assert sheet["B2"].value == "sí"
+    assert sheet["D2"].value == "Check answer"
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref == sheet.dimensions
+    assert sheet["C2"].hyperlink.target == "https://example.test/photo"
