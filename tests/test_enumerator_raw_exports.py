@@ -76,6 +76,16 @@ def test_blank_header_at_excel_column_bs_uses_position_label():
     assert exported.columns[-1] == "Error Message"
     assert exported.iloc[0, 70] == "v69"
 
+def test_pandas_generated_unnamed_header_at_bs_is_normalized_by_position():
+    columns = ["Collector Name"] + [f"field{i}" for i in range(69)] + ["Unnamed: 70"]
+    raw = pd.DataFrame([["Ana"] + [f"v{i}" for i in range(70)]], columns=columns)
+    issues = pd.DataFrame(columns=ISSUE_COLUMNS)
+
+    exported = build_enumerator_raw_exports(raw, issues)["Ana"]
+
+    assert exported.columns[70] == "Unnamed: BS"
+    assert exported.iloc[0, 70] == "v69"
+
 
 def test_raw_export_keeps_rows_when_no_errors_and_excludes_warnings():
     raw = pd.DataFrame({"Collector Name": ["Cak", "Cak"], "source_value": ["keep", "also keep"]})
