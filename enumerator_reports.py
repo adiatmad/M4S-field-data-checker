@@ -53,7 +53,7 @@ def filter_enumerator_report_issues(issues, *, include_gps_accuracy=True, includ
 
 def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, include_site_distance=True,
                                include_text_formatting=True):
-    """Return one enriched CSV dataframe per enumerator, sorted by enumerator name."""
+    """Return one enriched findings dataframe per enumerator, sorted by enumerator name."""
     filtered = filter_enumerator_report_issues(
         issues, include_gps_accuracy=include_gps_accuracy,
         include_site_distance=include_site_distance,
