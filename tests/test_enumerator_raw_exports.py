@@ -33,7 +33,7 @@ def test_raw_export_preserves_rows_and_columns_and_appends_only_error_message():
     assert ana["Numeru Quadrante"].tolist() == [1, 2]
     assert ana["Foto Quadrante_URL"].tolist() == ["https://example.test/photo1", ""]
     assert ana.columns.tolist() == [*raw.columns.tolist(), "Error Message"]
-    assert ana.loc[0, "Error Message"] == "Ho marked present but no % cover recorded"
+    assert ana.loc[0, "Error Message"] == "Espésie Ho marka hanesan prezente, maibé la rejista % kober (Ho marked present but no % cover recorded)"
     assert ana.loc[1, "Error Message"] == "Ho cover is missing"
     assert "warning" not in " ".join(ana["Error Message"].tolist()).casefold()
     assert exports["Beto"]["Error Message"].tolist() == [""]

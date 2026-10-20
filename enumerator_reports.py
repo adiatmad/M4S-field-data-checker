@@ -4,6 +4,8 @@ import io
 import re
 import pandas as pd
 
+from qa_message_localization import localize_qa_issue_messages
+
 
 def _issue_export_frame(df, issues):
     """Enrich findings with enumerator and direct Kobo image URL for field review."""
@@ -57,6 +59,8 @@ def build_enumerator_error_logs(df, issues, *, include_gps_accuracy=True, includ
         include_site_distance=include_site_distance,
         include_text_formatting=include_text_formatting,
     )
+    # Translate recognized survey errors only in this presentation/export copy.
+    filtered = localize_qa_issue_messages(filtered)
     enriched = _issue_export_frame(df, filtered)
     if enriched.empty:
         return {}

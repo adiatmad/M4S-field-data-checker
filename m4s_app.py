@@ -18,6 +18,7 @@ from rapidfuzz import fuzz, process
 from correction_review import apply_approved_corrections, suggest_corrections
 from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
 from enumerator_raw_exports import enumerator_raw_data_zip
+from qa_message_localization import localize_qa_issue_messages
 
 
 # Embedded M4S QA pipeline: this app is a single-file Streamlit entry point.
@@ -1284,6 +1285,7 @@ else:
 
         try:
             issues = validate(df)
+            display_issues = localize_qa_issue_messages(issues)
         except Exception:
             st.error(
                 "M4S QA could not complete during validation. No results are available. Retry the workflow. "
@@ -1464,17 +1466,17 @@ else:
         # The managed temporary directory is removed automatically after the report is read.
         with tempfile.TemporaryDirectory(prefix="m4s_qa_") as temp_dir:
             report_path = pathlib.Path(temp_dir) / "qa_report.md"
-            generate_qa_report(clean_df, issues, correction_log, report_path)
+            generate_qa_report(clean_df, display_issues, correction_log, report_path)
             report_text = report_path.read_text(encoding="utf-8")
         st.markdown(report_text)
         st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
     
     with tab_issues:
         st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the CSV for the full issue list.")
-        st.dataframe(issues.head(10), width='stretch', hide_index=True)
+        st.dataframe(display_issues.head(10), width='stretch', hide_index=True)
         st.download_button(
             "Download QA issues CSV",
-            issues.to_csv(index=False),
+            display_issues.to_csv(index=False),
             file_name="qa_issues.csv"
         )
     
