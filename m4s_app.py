@@ -1573,8 +1573,8 @@ else:
         help="A ZIP containing one .xlsx workbook per enumerator, with filters, a frozen header row, and clickable Kobo photo links where available.",
     )
 
-    # Excel-native alternative: one workbook with a summary and a separate sheet
-    # for each enumerator. Keep the existing per-enumerator CSV ZIP for compatibility.
+    # Optional consolidated workbook: one summary sheet plus one findings sheet
+    # per enumerator. The ZIP above remains available for separate per-enumerator files.
     report_workbook = enumerator_error_workbook(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1586,7 +1586,7 @@ else:
         data=report_workbook,
         file_name="m4s_enumerator_error_reports.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="One Excel workbook with a Summary sheet and one findings sheet per enumerator. The existing CSV ZIP remains available below.",
+        help="One Excel workbook with a Summary sheet and one findings sheet per enumerator. Use the ZIP above if you prefer a separate workbook for each enumerator.",
     )
 
     # This is the field team's working copy: preserve all source rows and columns,
