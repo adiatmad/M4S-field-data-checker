@@ -64,7 +64,7 @@ def build_enumerator_raw_exports(
 
     Warnings and informational findings are deliberately excluded. Blank source
     headers are given positional placeholder names (for example, Unnamed: BS)
-    so exported CSVs do not contain unlabeled columns; no domain meaning is inferred.
+    so Excel exports do not contain unlabeled columns; no domain meaning is inferred.
     """
     if raw_df is None:
         raise ValueError("Raw source data is required.")
