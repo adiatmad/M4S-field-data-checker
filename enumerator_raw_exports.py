@@ -42,7 +42,7 @@ def _make_blank_headers_explicit(columns):
     for index, column in enumerate(columns):
         if column is None or (isinstance(column, str) and not column.strip()):
             output.append(f"Unnamed: {_excel_column_name(index)}")
-        elif isinstance(column, str) and re.fullmatch(r"Unnamed:\\s*\\d+(?:\\.\\d+)?", column):
+        elif isinstance(column, str) and re.fullmatch(r"Unnamed:\s*\d+(?:\.\d+)?", column):
             # pandas labels empty Excel header cells as "Unnamed: 70"; use the
             # stable Excel letter instead so reviewers can locate the column.
             output.append(f"Unnamed: {_excel_column_name(index)}")
