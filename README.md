@@ -4,13 +4,15 @@
 
 This tool checks downloaded survey files and highlights things worth reviewing, such as missing answers, duplicate records, unusual values, and problems with GPS coordinates. You do not need to be a programmer to use the Streamlit app, but you will need to install it or open a version hosted by your team.
 
+**New to the app? Start with the [Field Team User Guide](USER_GUIDE.md).** It explains both workflows, how to understand findings, and which reports to download in simple English.
+
 It has two workflows. Choose the one that matches the file you downloaded.
 
 ## Start here: Which file do you have?
 
 ### I have a CSV file from KoboToolbox
 
-Choose **Generic Kobo CSV checker** if you want general checks for a survey export.
+Choose **Generic CSV quality checker** if you want general checks for a survey export.
 
 It can help you:
 - find blank or missing values;
@@ -24,7 +26,9 @@ It does **not** know what every question in your survey means. For example, it c
 
 ### I have an Excel (.xlsx) export for the M4S seagrass survey
 
-Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. GPS precision is optional in the input export: when absent, coordinate and site-distance checks still run. The app can download an Excel workbook with a summary sheet and one findings sheet per enumerator, or a ZIP of separate enumerator CSVs; reports include direct Kobo photo URLs when available. GPS-accuracy/site-distance findings can be hidden from enumerator-facing reports. The report switches can independently include or hide GPS precision, site-distance, and Tetum/categorical text-variant findings. They are configuration controls, not role-based access control.
+Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. GPS precision is optional in the input export: when absent, coordinate and site-distance checks still run.
+
+The app can download separate Excel workbooks for enumerators, a combined Excel workbook, or a ZIP of each enumerator's raw rows with error messages. Reports include direct Kobo photo URLs when available. GPS-accuracy, site-distance, and Tetum/categorical capitalization findings can be independently included in or excluded from enumerator-facing reports. These switches are configuration controls, not role-based access control.
 
 Enumerator-name normalization and geography typo correction have separately configurable similarity thresholds in the M4S workflow. The full raw-data-per-enumerator ZIP preserves the source rows and columns and appends exactly one `Error Message` column with errors only; warnings are excluded from that export. Empty source headers are labeled by their Excel position (for example, `Unnamed: BS`) rather than assigned guessed meanings. Higher thresholds are more conservative; review the correction log before using the cleaned output. These checks include assumptions specific to the M4S project, such as expected columns and site locations. Do not use them for another survey without reviewing those assumptions first.
 
@@ -95,22 +99,3 @@ By default, the results are written to an `output/` folder. You can choose anoth
 - `m4s_seagrass_qa.py` — standalone M4S-specific command-line QA workflow.
 
 Read [docs/SPEC.md](docs/SPEC.md), [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md), the [Loop and Graph contract](docs/LOOP_GRAPH_CONTRACT.md), and the [UI/UX guidelines](docs/UI_UX_GUIDELINES.md) for implementation details and validation behavior.
-
-## Tests
-
-Run the automated tests from the repository root:
-
-```bash
-python -m pytest -q
-```
-
-The test suite covers the generic CSV checker and validation failure handling. Automated tests do not replace a manual walkthrough of the Streamlit interface or validation against a real, approved survey export.
-
-## License
-
-See [LICENSE](LICENSE). The repository is licensed under AGPL-3.0.
-
-
-## Optional: Review M4S corrections before applying
-
-The M4S workflow includes a collapsed **Review suggested name and geography corrections** section on the same page as the QA findings. Nothing is changed until you explicitly approve individual proposals. Approved changes can be downloaded with a before/after audit log. Keep the raw export unchanged and verify proposals with the field team. See [the correction review workflow](docs/CORRECTION_REVIEW.md).
