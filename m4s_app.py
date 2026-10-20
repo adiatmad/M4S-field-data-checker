@@ -678,7 +678,7 @@ def correct(df: pd.DataFrame, *, enumerator_match_threshold: int = ENUMERATOR_MA
         for i in df.index[mask]:
             before = df.at[i, col]
             after_val = mapping.get(before, before) if isinstance(mapping, dict) else None
-            log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"], field=col,
+            log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"] if "_uuid" in df.columns else None, field=col,
                                   rule=rule, before=before, after=after_val,
                                   timestamp=datetime.now(timezone.utc).isoformat()))
 
@@ -706,7 +706,7 @@ def correct(df: pd.DataFrame, *, enumerator_match_threshold: int = ENUMERATOR_MA
     df["Collector Name"] = df["Collector Name"].apply(format_fix)
     fmt_changed = before_fmt != df["Collector Name"]
     for i in df.index[fmt_changed]:
-        log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"], field="Collector Name",
+        log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"] if "_uuid" in df.columns else None, field="Collector Name",
                               rule="enumerator_name_formatting", before=before_fmt.at[i],
                               after=df.at[i, "Collector Name"],
                               timestamp=datetime.now(timezone.utc).isoformat()))
@@ -723,7 +723,7 @@ def correct(df: pd.DataFrame, *, enumerator_match_threshold: int = ENUMERATOR_MA
         df[field] = df[field].apply(fix)
         changed_mask = before_col != df[field]
         for i in df.index[changed_mask]:
-            log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"], field=field,
+            log_rows.append(dict(row_index=i, uuid=df.at[i, "_uuid"] if "_uuid" in df.columns else None, field=field,
                                   rule="geography_typo_fix", before=before_col.at[i],
                                   after=df.at[i, field],
                                   timestamp=datetime.now(timezone.utc).isoformat()))
