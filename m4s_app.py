@@ -24,7 +24,7 @@ from qa_message_localization import localize_qa_issue_messages
 def dataframe_to_xlsx(frame: pd.DataFrame, *, sheet_name: str = "Data") -> bytes:
     """Serialize a dataframe as a real XLSX workbook for Excel-friendly downloads."""
     buffer = io.BytesIO()
-    safe_sheet_name = re.sub(r"[\\\\/?*\\[\\]:]", "_", sheet_name)[:31] or "Data"
+    safe_sheet_name = sheet_name[:31] or "Data"
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         frame.to_excel(writer, sheet_name=safe_sheet_name, index=False)
         worksheet = writer.book[safe_sheet_name]
@@ -1643,7 +1643,7 @@ else:
         1. **Review the summary** to understand what issues exist
         2. **Filter by QA columns** to find all rows with specific issues
         3. **Check the Message column** for detailed error descriptions
-        4. **Download raw_with_qa_flags.csv** to fix issues in Excel
+        4. **Download raw_with_qa_flags.xlsx** to fix issues in Excel
         5. **Fix issues in the raw data** and re-upload
         6. **Use the Message column** as a checklist during data cleaning
         """)
