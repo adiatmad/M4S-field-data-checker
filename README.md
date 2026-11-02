@@ -12,7 +12,7 @@ It has two workflows. Choose the one that matches the file you downloaded.
 
 ### I have a CSV file from KoboToolbox
 
-Choose **Generic CSV quality checker** if you want general checks for a survey export.
+Choose **CSV file (.csv) from another KoboToolbox survey** if you want general checks for a survey export.
 
 It can help you:
 - find blank or missing values;
@@ -26,7 +26,7 @@ It does **not** know what every question in your survey means. For example, it c
 
 ### I have an Excel (.xlsx) export for the M4S seagrass survey
 
-Choose **M4S seagrass QA** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. GPS precision is optional in the input export: when absent, coordinate and site-distance checks still run.
+Choose **Excel file (.xlsx) from the M4S seagrass survey** for the project's specific checks. These include GPS locations, species-related fields, percentage fields, seagrass general condition, required answers, timestamps, photos, duplicates, and species-cover/total-cover mismatches. GPS precision is optional in the input export: when absent, coordinate and site-distance checks still run.
 
 The app can download separate Excel workbooks for enumerators, a combined Excel workbook, or a ZIP of each enumerator's raw rows with error messages. Reports include direct Kobo photo URLs when available. GPS-accuracy, site-distance, and Tetum/categorical capitalization findings can be independently included in or excluded from enumerator-facing reports. These switches are configuration controls, not role-based access control.
 
@@ -65,7 +65,7 @@ python -m pip install -r requirements.txt
 streamlit run m4s_app.py
 ```
 
-The app opens in your browser. Choose the workflow that matches your file and follow the on-screen instructions.
+The app opens in your browser. Answer **Which file did you download from KoboToolbox?** in the sidebar, then follow the numbered steps on the page.
 
 For the standalone generic CSV checker, you can also run:
 

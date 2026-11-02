@@ -12,7 +12,7 @@ These are project-specific rules, informed by GitHub examples including [Cabotag
 
 ## Interaction principles
 
-1. **Explain the next action.** The upload state tells users which file type is expected and what happens after upload. Controls use specific labels such as “Show only rows with issues” rather than generic “Filter” or “Go”.
+1. **Explain the next action.** The upload state tells users which file type is expected and what happens after upload. Controls use specific labels such as “Show only records with a finding” rather than generic “Filter” or “Go”.
 2. **Make validation scope visible.** Explain enabled checks and relevant limits near the workflow. Generic CSV screening is not XLSForm validation; M4S rules are specific to the current form and site assumptions.
 3. **Report evidence, not certification.** “No findings from the enabled checks” is acceptable. “All data is clean/valid” is not. A count of rows without flags must not imply that those rows are correct.
 4. **Make findings actionable.** A finding should identify the affected row/field where available, explain what was observed, and suggest a safe review step. Do not silently correct uncertain values.

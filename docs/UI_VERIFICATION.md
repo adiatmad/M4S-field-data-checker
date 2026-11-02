@@ -30,6 +30,10 @@ Use this checklist before releasing a change that affects either Streamlit workf
 - [ ] Wide tables and controls remain usable at a narrow viewport.
 - [ ] No real field data is sent to an external service or committed to the repository.
 
+## Automated UI smoke checks
+
+`tests/test_app_ui_smoke.py` drives both entry points headlessly with Streamlit's `AppTest`: workflow selection, the empty upload state, a valid upload reaching the numbered results steps, an unsupported upload showing a recoverable error, and the CSV workflows reporting a summary. These checks cover rendering and state, not visual layout, keyboard order, or narrow-viewport behaviour. The human checklist above is still required before release.
+
 ## Evidence record
 
 - App/commit: 

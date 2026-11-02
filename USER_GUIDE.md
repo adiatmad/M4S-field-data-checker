@@ -6,12 +6,12 @@ This guide is for **field enumerators and field coordinators**. It explains how 
 
 ## 1. Choose the correct workflow
 
-Use the **Choose workflow** control in the left sidebar.
+Answer **Which file did you download from KoboToolbox?** in the left sidebar.
 
 | Your file | Choose |
 |---|---|
-| An Excel `.xlsx` export of the M4S seagrass survey from KoboToolbox | **M4S seagrass XLSX** |
-| A general KoboToolbox survey exported as a `.csv` file | **Generic CSV quality checker** |
+| An Excel `.xlsx` export of the M4S seagrass survey from KoboToolbox | **Excel file (.xlsx) from the M4S seagrass survey** |
+| A general KoboToolbox survey exported as a `.csv` file | **CSV file (.csv) from another KoboToolbox survey** |
 
 These workflows do different checks. The M4S workflow contains project-specific rules for the M4S seagrass survey. The generic workflow checks general file quality and does not know the meaning of every survey question.
 
@@ -24,11 +24,11 @@ These workflows do different checks. The M4S workflow contains project-specific 
 
 The M4S upload screen currently states a **200 MB per-file limit**.
 
-## 3. M4S seagrass XLSX workflow
+## 3. Excel (.xlsx) workflow for the M4S seagrass survey
 
 ### Step 1 — Upload the KoboToolbox Excel export
 
-Choose **M4S seagrass XLSX**, then upload the `.xlsx` export. The screen says to start by uploading the Excel file downloaded from KoboToolbox. Wait for the checks to finish.
+Choose **Excel file (.xlsx) from the M4S seagrass survey**, then upload the `.xlsx` export in Step 1. If you are new to the checker, open **First time here? Read this before you start** and **What this checker does and does not check** first. Wait for the checks to finish.
 
 If processing stops with an error, read the message. Check that you uploaded the correct file and that it contains the expected M4S survey columns. If the problem remains, report the error to the coordinator or person maintaining the app. Do not share a real survey export in a public issue or chat.
 
@@ -37,9 +37,9 @@ If processing stops with an error, read the message. Check that you uploaded the
 The summary includes measures such as:
 
 - **Total records:** the number of survey records processed.
-- **Rows without flagged issues:** rows for which the active checks did not report a finding.
+- **Records with no finding:** records for which the active checks did not report a finding.
 - **Errors and warnings:** findings that need attention.
-- **Corrections applied:** changes made by the workflow's standardization/correction steps and recorded in its outputs.
+- **Automatic corrections:** changes made by the workflow's standardization and correction steps, recorded in the **What changed** tab and in the correction log download.
 
 A row without a finding is not guaranteed to be correct. The checker only tests the rules it knows.
 
@@ -47,10 +47,12 @@ A row without a finding is not guaranteed to be correct. The checker only tests 
 
 Use the available filters to narrow the data:
 
-- **Show only rows with issues** to focus on flagged records.
-- **Filter by QA Flag** to show particular types of finding.
-- **Search in data** to look for a value or record.
-- **Show only rows with Message** to focus on rows that have a QA message.
+- **Show only records with a finding** to focus on flagged records.
+- **Only these kinds of finding** to show particular types of finding. Leaving it empty shows records with any kind of finding.
+- **Search the table** to look for a value or record.
+- **Only records with a written explanation** to focus on records that have a message.
+
+The filters work together. Combine them in any order, and clear a filter to see more records. If no record matches, the page says so instead of showing a blank table.
 
 The app normally previews the first 10 rows. An expandable section can show the full filtered table. Use filters to investigate; they do not edit the original KoboToolbox submission.
 
@@ -72,12 +74,12 @@ The message column may contain multiple messages separated by semicolons. Read a
 
 The M4S workflow offers different outputs for different tasks:
 
-- **Raw data with QA flags** — the source rows with QA information added.
-- **QA issues / issue list** — a list of findings to investigate.
-- **QA report** — a summary of findings.
-- **Correction log** — a record of corrections made by the workflow.
-- **Clean dataset** — the processed dataset; review its QA findings and correction log before using it.
-- **Filtered view** — the records currently shown by your filters.
+- **Raw data with QA flags and messages**: the source rows with QA information added. Most teams open this file first.
+- **QA issues list**: a list of findings to investigate.
+- **Summary report**: a short overview of the findings, under the **Summary report** tab.
+- **What changed**: every automatic change, under the **What changed** tab and in the correction log download.
+- **Cleaned data**: the processed dataset, under the **Cleaned data** tab. Review its findings and the change list before using it.
+- **Filtered view**: the records currently shown by your filters.
 
 Use the correction log to understand changes. Keep the original export and do not treat the cleaned dataset as automatically approved.
 
@@ -115,13 +117,13 @@ Where the KoboToolbox export contains a photo URL, the report can include a dire
 
 **Screenshot note:** The screenshot supplied for this guide shows the three report switches and download buttons. It is not embedded in this document yet; add the approved screenshot asset under `docs/images/` and link it here when the image is committed to the repository.
 
-## 4. Generic CSV quality checker
+## 4. CSV workflow for other KoboToolbox surveys
 
 Use this workflow for a general survey CSV when you want broad quality checks rather than the M4S-specific seagrass rules.
 
 ### Step 1 — Upload a CSV
 
-Choose **Generic CSV quality checker** and upload the `.csv` file. The app processes the uploaded file on the server where it runs. Use an approved local deployment for sensitive data unless your team has reviewed the hosted deployment's protections.
+Choose **CSV file (.csv) from another KoboToolbox survey** and upload the `.csv` file in Step 1. The app processes the uploaded file on the server where it runs. Use an approved local deployment for sensitive data unless your team has reviewed the hosted deployment's protections.
 
 ### Step 2 — Choose the checks
 
@@ -137,7 +139,7 @@ The generic checker keeps CSV values as text during checks to help preserve iden
 
 ### Step 3 — Review the results
 
-The results summary shows the number of rows, columns, findings, and affected rows. Filter findings by category and review the findings preview. The app previews the first 10 findings; the input preview can show the first 100 rows.
+The results summary shows the number of rows, columns, findings, and rows with a finding. Filter findings by category and review the findings preview. The app previews the first 10 findings; the input preview can show the first 100 rows. Row numbers count the header as row 1, so row 2 is the first survey record.
 
 Finding categories can include:
 

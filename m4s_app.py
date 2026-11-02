@@ -20,6 +20,7 @@ from dataframe_exports import dataframe_to_xlsx
 from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
 from enumerator_raw_exports import enumerator_raw_data_zip
 from qa_message_localization import localize_qa_issue_messages
+from qa_table_filters import select_rows_for_review
 
 
 
@@ -1161,46 +1162,146 @@ def findings_summary(findings: pd.DataFrame) -> dict[str, int]:
     }
 
 
+QA_FLAG_DETAILS = [
+    (
+        "qa_gps_precision_0",
+        "No GPS fix",
+        "GPS precision was recorded as 0.0, which usually means the phone had no usable location when the record was saved.",
+    ),
+    (
+        "qa_missing_coordinates",
+        "Missing coordinates",
+        "Latitude or longitude is blank for this record.",
+    ),
+    (
+        "qa_outside_boundary",
+        "Far from the site",
+        f"More than {SITE_RADIUS_M} m from the site reference point. This is a distance warning, not proof the point is outside the official site boundary.",
+    ),
+    (
+        "qa_duplicate_uuid",
+        "Duplicate record",
+        "The same submission identifier appears more than once, so a record may have been downloaded or entered twice.",
+    ),
+    (
+        "qa_species_logic",
+        "Species answers",
+        "A species is marked present with no cover recorded, cover is recorded without the species being marked, or a percentage is outside 0 to 100.",
+    ),
+    (
+        "qa_missing_general_condition",
+        "Missing condition",
+        "The seagrass general condition answer is blank or was not found in the expected column.",
+    ),
+    (
+        "qa_coverage_mismatch",
+        "Coverage does not add up",
+        "The species percentages do not match the Epicover percentage within the allowed tolerance.",
+    ),
+]
+
+QA_FLAG_COLUMNS = [column for column, _, _ in QA_FLAG_DETAILS]
+QA_FLAG_LABEL_MAP = {column: label for column, label, _ in QA_FLAG_DETAILS}
+QA_FLAG_HELP_MAP = {
+    column: f"{label}: {note} 'Yes' or 'Review' in this column means the record has this finding."
+    for column, label, note in QA_FLAG_DETAILS
+}
+
+
 def render_generic_csv_checker():
-    st.title("Generic Kobo CSV Quality Checker")
-    st.caption("General-purpose CSV screening. Uploads are processed by the server running this app; use a local deployment for sensitive data unless hosting protections have been reviewed.")
-    with st.expander("What this checks"):
-        st.markdown("""
-        - CSV structure and resource-level issues (Frictionless)
-        - Blank values and configured missing-value tokens
-        - Exact duplicate rows
-        - Optional IQR-based numeric outlier screening
-        - Optional similar-text value suggestions for human review; no automatic changes
-        - Optional JSON contract for required columns, allowed values, types, numeric ranges, and unique keys
-        - No automatic corrections; review findings before changing source data
-        """)
-    uploaded_csv = st.file_uploader("Upload a raw Kobo CSV export", type=["csv"], key="generic_csv_upload")
-    missing_text = st.text_input("Missing-value tokens (comma-separated)", value=",NA,N/A,NULL,null", key="generic_missing_tokens")
-    check_duplicates = st.checkbox("Check exact duplicate rows", value=True, key="generic_duplicates")
-    check_outliers = st.checkbox("Screen numeric-looking columns for outliers (IQR)", value=True, key="generic_outliers")
-    check_similar_values = st.checkbox("Suggest similar text values for review (no automatic changes)", value=False, key="generic_similar_values")
-    contract_file = st.file_uploader("Optional validation contract (JSON)", type=["json"], key="generic_contract")
+    st.title("Check a KoboToolbox CSV file")
+    st.caption(
+        "Use this workflow for any KoboToolbox survey exported as a .csv file. The checker lists "
+        "rows worth a second look: empty answers, exact copies of another row, unusual numbers, and "
+        "values that look like spelling variants. It does not change your file."
+    )
+    st.caption(
+        "Privacy: your file is read by the app running here. For real field data, use only a "
+        "deployment your team has approved."
+    )
+    with st.expander("First time here? Read this before you start"):
+        st.markdown(
+            """
+            1. In KoboToolbox, download your survey data and choose CSV as the format.
+            2. Keep that download as your unchanged copy.
+            3. Upload it below. The checks start on their own and the results replace the prompt.
+            4. Read the summary, then use the row number and column name to find each answer in
+               KoboToolbox.
+
+            A finding means "please check this row". It does not prove the answer is wrong.
+            """
+        )
+
+    st.subheader("Step 1: Upload your CSV file")
+    uploaded_csv = st.file_uploader(
+        "Choose a KoboToolbox CSV export (.csv)",
+        type=["csv"],
+        key="generic_csv_upload",
+        help="The file name usually ends in .csv. A .csv file is a plain table of answers.",
+    )
+    with st.expander("Choose what to check"):
+        st.caption(
+            "These settings suit most surveys. Change them only when your team asks you to."
+        )
+        missing_text = st.text_input(
+            "Treat these answers as missing (comma-separated)",
+            value=",NA,N/A,NULL,null",
+            key="generic_missing_tokens",
+            help="Answers in this list are reported as missing. The leading comma means empty cells count as missing.",
+        )
+        check_duplicates = st.checkbox(
+            "Find rows that are exact copies of another row",
+            value=True,
+            key="generic_duplicates",
+            help="Rows with identical values in every column. Nothing is deleted or merged.",
+        )
+        check_outliers = st.checkbox(
+            "Point out unusual numbers for review",
+            value=True,
+            key="generic_outliers",
+            help="Compares each number with the other values in its column. An unusual number may still be a real answer.",
+        )
+        check_similar_values = st.checkbox(
+            "Suggest values that look like spelling variants",
+            value=False,
+            key="generic_similar_values",
+            help="Review suggestions only. The checker never merges or rewrites values.",
+        )
+        contract_file = st.file_uploader(
+            "Optional: team rules file (.json)",
+            type=["json"],
+            key="generic_contract",
+            help="Only use a rules file supplied by the person who owns the survey.",
+        )
+
     contract = None
     if contract_file is not None:
         try:
             contract = json.loads(contract_file.getvalue().decode("utf-8"))
             if not isinstance(contract, dict):
-                raise ValueError("The contract root must be a JSON object.")
+                raise ValueError("The file must contain one JSON object holding the rules.")
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-            st.error(f"Invalid validation contract: {exc}")
+            st.error(
+                f"The team rules file could not be read: {exc} Remove it to run the standard checks "
+                "without team rules."
+            )
             st.stop()
+
     if uploaded_csv is None:
-        st.info("Upload a CSV to begin.")
+        st.info(
+            "Choose the .csv file you downloaded from KoboToolbox. The checks start on their own "
+            "and the results appear here."
+        )
         return
     data = uploaded_csv.getvalue()
     try:
         frame = read_csv_bytes(data)
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(f"This file could not be read as a CSV table: {exc}")
         return
     tokens = tuple(token.strip() for token in missing_text.split(","))
     try:
-        with st.spinner("Checking CSV structure and values…"):
+        with st.spinner("Checking your file. Large files can take a minute."):
             findings = run_quality_checks(
                 data, uploaded_csv.name, frame,
                 missing_tokens=tokens,
@@ -1210,61 +1311,169 @@ def render_generic_csv_checker():
                 contract=contract,
             )
     except QualityCheckError as exc:
-        st.error(f"Quality checks could not complete during {exc.stage}. No partial results are shown. Retry; if the problem persists, report the failure without sharing sensitive survey data.")
+        st.error(
+            f"The checks stopped during the {exc.stage} step, so no results are shown. "
+            "Try the same file once more. If it stops again, tell your coordinator the name of that "
+            "step; do not send the survey file itself."
+        )
         return
-    summary = findings_summary(findings)
-    a, b, c, d = st.columns(4)
-    a.metric("Rows", len(frame))
-    b.metric("Columns", len(frame.columns))
-    c.metric("Findings", summary["findings"])
-    d.metric("Affected rows", summary["affected_rows"])
-    st.subheader("Findings")
-    if findings.empty:
-        st.success("No findings from the enabled generic checks.")
-    else:
-        categories = st.multiselect("Filter categories", sorted(findings["category"].dropna().unique()), key="generic_categories")
-        visible = findings[findings["category"].isin(categories)] if categories else findings
-        st.caption(f"Preview: first {min(10, len(visible))} of {len(visible):,} findings. Download the Excel workbook for the complete filtered findings.")
-        st.dataframe(visible.head(10), use_container_width=True, hide_index=True)
-        st.download_button("Download findings (.xlsx)", dataframe_to_xlsx(visible, sheet_name="Findings"),
-                           file_name="kobo_csv_findings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    with st.expander("Preview input (first 100 rows)"):
-        st.dataframe(frame.head(100), use_container_width=True, hide_index=True)
-    st.download_button("Download input data (.xlsx)", dataframe_to_xlsx(frame, sheet_name="Input data"),
-                        file_name=f"{pathlib.Path(uploaded_csv.name).stem}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+    summary = findings_summary(findings)
+    st.subheader("Step 2: Read the summary")
+    a, b, c, d = st.columns(4)
+    a.metric("Rows", len(frame), help="One row is one survey record.")
+    b.metric("Columns", len(frame.columns), help="One column is one question or system field.")
+    c.metric(
+        "Findings", summary["findings"],
+        help="One finding is one answer or row to check. A single row can have more than one.",
+    )
+    d.metric(
+        "Rows with a finding", summary["affected_rows"],
+        help="Rows where at least one enabled check reported something to review.",
+    )
+    st.caption(
+        'A finding means "please check this row", not "this answer is wrong". Rows without a '
+        "finding were not proven correct; they only passed the checks you switched on."
+    )
+
+    st.subheader("Step 3: Review the findings")
+    if findings.empty:
+        st.success(
+            "The checks you switched on did not report anything. That means these checks found "
+            "nothing to review, not that every answer is correct."
+        )
+    else:
+        st.caption(
+            "Row numbers count the header as row 1, so row 2 is the first survey record. Use the row "
+            "and column to find the answer in KoboToolbox."
+        )
+        categories = st.multiselect(
+            "Show only these kinds of finding",
+            sorted(findings["category"].dropna().unique()),
+            key="generic_categories",
+        )
+        visible = findings[findings["category"].isin(categories)] if categories else findings
+        st.caption(
+            f"Showing the first {min(10, len(visible))} of {len(visible):,} findings. "
+            "Download the Excel file to see every one."
+        )
+        st.dataframe(visible.head(10), width="stretch", hide_index=True)
+        st.download_button(
+            "Download findings (.xlsx)",
+            dataframe_to_xlsx(visible, sheet_name="Findings"),
+            file_name="kobo_csv_findings.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="The findings shown above, ready to share with the team.",
+        )
+
+    st.subheader("Step 4: Download or inspect the data")
+    with st.expander("Preview the file that was read (first 100 rows)"):
+        st.dataframe(frame.head(100), width="stretch", hide_index=True)
+    st.download_button(
+        "Download input data (.xlsx)",
+        dataframe_to_xlsx(frame, sheet_name="Input data"),
+        file_name=f"{pathlib.Path(uploaded_csv.name).stem}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="An unchanged copy of the answers, as an Excel file for review.",
+    )
+    st.caption(
+        "Keep the original CSV as your source. Fix approved problems in your usual data process, "
+        "then run these checks again on the new export."
+    )
+
+
+M4S_WORKFLOW = "Excel file (.xlsx) from the M4S seagrass survey"
+CSV_WORKFLOW = "CSV file (.csv) from another KoboToolbox survey"
 
 st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
-mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV quality checker"])
-if mode == "Generic CSV quality checker":
+mode = st.sidebar.radio(
+    "Which file did you download from KoboToolbox?",
+    [M4S_WORKFLOW, CSV_WORKFLOW],
+    help="Choose the option that matches the file you saved. The two workflows run different checks.",
+)
+st.sidebar.caption(
+    "An .xlsx file opens in Excel. A .csv file is a plain table. A file from another survey will "
+    "not pass the M4S checks."
+)
+
+if mode == CSV_WORKFLOW:
     render_generic_csv_checker()
 else:
     st.title("Check your M4S seagrass survey data")
-    st.caption("Upload the Excel file you downloaded from KoboToolbox. The checker will highlight records that may need review. It does not decide every issue automatically, so review the findings before changing your data. For sensitive field data, use only a deployment approved by your team.")
-    
-    uploaded = st.file_uploader("Choose your KoboToolbox Excel file (.xlsx)", type=["xlsx"], help="Use the Excel export for the M4S seagrass survey. This workflow is not for CSV files or other projects.")
-    
-    if uploaded is None:
-        st.info("Start by uploading the Excel (.xlsx) file exported from KoboToolbox for the M4S seagrass survey. Your results will appear here after the checks finish.")
-        st.stop()
-    
-    # Keep data-cleaning thresholds visible and adjustable instead of hiding them as constants.
-    with st.expander("Enumerator and geography cleaning parameters", expanded=False):
-        st.caption("Higher similarity thresholds are more conservative and reduce automatic name/geography corrections.")
-        enumerator_match_threshold = st.slider(
-            "Enumerator-name similarity threshold",
-            min_value=80, max_value=100, value=ENUMERATOR_MATCH_THRESHOLD, step=1,
-            help="Minimum fuzzy-match score before enumerator names are grouped for normalization.",
+    st.caption(
+        "Upload the Excel file you downloaded from KoboToolbox. The checker lists survey records "
+        "that may need a second look. You decide what to change; the checker never edits your upload."
+    )
+    st.caption(
+        "Privacy: the file is read by the app running here. For real field data, use only a "
+        "deployment your team has approved."
+    )
+    with st.expander("First time here? Read this before you start"):
+        st.markdown(
+            """
+            1. In KoboToolbox, download the M4S seagrass survey as an Excel file (.xlsx).
+            2. Keep that download as your unchanged copy.
+            3. Upload it below. The checks run on their own and the results replace the upload prompt.
+            4. Read the summary in Step 2, then work through the flagged records in Step 4.
+            5. Download the reports your coordinator asked for in Step 5.
+
+            A flag means "please check this record". It does not prove the record is wrong.
+            """
         )
-        geography_match_threshold = st.slider(
-            "Geography typo-correction threshold",
-            min_value=80, max_value=100, value=GEO_MATCH_THRESHOLD, step=1,
-            help="Minimum fuzzy-match score before Administration Post or Village is corrected.",
+    with st.expander("What this checker does and does not check"):
+        st.markdown(
+            f"""
+            **It checks** GPS coordinates, GPS precision, distance from the site reference point,
+            required answers, seagrass species answers, the general condition answer, percentage
+            ranges, duplicate submissions, survey duration, quadrat photos, and whether the species
+            percentages add up to the Epicover percentage.
+
+            **It does not check** your form's own skip logic, choice lists, or repeat groups; those
+            need the matching XLSForm. It also cannot decide whether a species record is
+            ecologically possible for that quadrat.
+
+            The distance check uses a {SITE_RADIUS_M} m circle around the site reference point. That
+            is a distance warning, not a test against the official site boundary.
+            """
         )
 
+    st.subheader("Step 1: Upload your Excel file")
+    uploaded = st.file_uploader(
+        "Choose your KoboToolbox Excel file (.xlsx)",
+        type=["xlsx"],
+        help="Use the Excel export for the M4S seagrass survey. This workflow is not for CSV files or other projects.",
+    )
+    st.caption(
+        "The file name usually ends in .xlsx. A CSV file, or an export from another survey, belongs "
+        "in the other workflow on the left."
+    )
+    if uploaded is None:
+        st.info(
+            "Choose the .xlsx file you downloaded from KoboToolbox. The checks start on their own "
+            "and the results appear below."
+        )
+        st.stop()
+
+    # Keep data-cleaning thresholds visible and adjustable instead of hiding them as constants.
+    with st.expander("Advanced: name and site spelling settings"):
+        st.caption(
+            "Leave these as they are unless your coordinator asked you to change them. A higher "
+            "number means fewer names and site labels are treated as the same value."
+        )
+        enumerator_match_threshold = st.slider(
+            "Enumerator name matching threshold",
+            min_value=80, max_value=100, value=ENUMERATOR_MATCH_THRESHOLD, step=1,
+            help="How close two spellings must score before the names are grouped as one enumerator.",
+        )
+        geography_match_threshold = st.slider(
+            "Geography name matching threshold",
+            min_value=80, max_value=100, value=GEO_MATCH_THRESHOLD, step=1,
+            help="How close a post or village spelling must score before it is corrected to the known name.",
+        )
+
+    st.caption("The checks run in a few stages. A large export can take a minute.")
     # Run each stage separately so failures stop the workflow without exposing a traceback.
-    with st.spinner("Running QA pipeline..."):
+    with st.spinner("Checking your file..."):
         try:
             raw_df, df = load_data(uploaded)
         except ValueError as exc:
@@ -1318,141 +1527,178 @@ else:
                 "report the correction stage without sharing survey data."
             )
             st.stop()
-    
-    # ---- summary metrics ----
+
     total = len(clean_df)
     flagged = issues.row_index.nunique() if len(issues) else 0
     errors = (issues.severity == "error").sum() if len(issues) else 0
     warnings = (issues.severity == "warning").sum() if len(issues) else 0
-    
-    st.divider()
+
+    st.subheader("Step 2: Read the summary")
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total records", total)
-    col2.metric("Rows without flagged issues", total - flagged, help="No enabled QA flag was recorded for these rows. This is not a guarantee that the data is error-free.")
-    col3.metric("Errors", int(errors), help="Review these findings before analysis.")
-    col4.metric("Warnings", int(warnings), help="Review and decide whether action is needed.")
-    col5.metric("Corrections applied", len(correction_log))
-    
+    col1.metric("Total records", total, help="One record is one survey submission.")
+    col2.metric(
+        "Records with no finding", total - flagged,
+        help="No enabled check reported anything for these records. That is not proof that they are correct.",
+    )
+    col3.metric(
+        "Errors", int(errors),
+        help="Findings the rules classify as errors. Check each one before using the data.",
+    )
+    col4.metric(
+        "Warnings", int(warnings),
+        help="Findings worth a look. Some describe normal field conditions.",
+    )
+    col5.metric(
+        "Automatic corrections", len(correction_log),
+        help="Small clean-ups such as extra spaces, name casing, and site spelling. Every change is listed in the 'What changed' tab.",
+    )
+    st.caption(
+        "A finding is a reason to check the original submission, not proof that the answer is wrong. "
+        "These counts cover only the checks listed under 'What this checker does and does not check'."
+    )
+
     st.divider()
-    
-    # ---- QA COLUMNS OVERVIEW ----
-    st.subheader("QA flags and messages")
-    st.markdown("""
-    The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
-    The Message column provides detailed descriptions of all issues for each row.
-    **Filter by any column to find rows that need fixing!**
-    """)
-    
-    # Show QA columns summary
-    qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates',
-               'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
-               'qa_missing_general_condition', 'qa_coverage_mismatch']
-    
-    qa_summary = {}
-    for col in qa_cols:
-        if col in raw_with_qa.columns:
-            if col == 'qa_coverage_mismatch':
-                count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
-            else:
-                count = (raw_with_qa[col] == 'Yes').sum()
-            qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
-    
-    if sum(qa_summary.values()) > 0:
-        cols = st.columns(len(qa_summary))
-        for i, (name, count) in enumerate(qa_summary.items()):
-            if count > 0:
-                cols[i].metric(name, count, delta=None)
-            else:
-                cols[i].metric(name, 0, delta=None)
-    else:
-        st.success("No flags were triggered by the summary checks shown here. This does not certify the dataset as error-free; review the enabled checks and survey protocol.")
-    
-    st.divider()
-    
-    st.subheader("Filter raw data by QA flags")
-    
-    # Show the raw data with QA columns
-    display_df = raw_with_qa.copy()
-    
-    filter_cols = st.columns(4)
-    with filter_cols[0]:
-        show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
-    with filter_cols[1]:
-        if show_only_with_issues:
-            qa_cols_for_filter = st.multiselect(
-                "Filter by QA Flag",
-                options=qa_cols,
-                default=qa_cols
+    st.subheader("Step 3: See what kinds of finding were reported")
+    st.caption(
+        "Each number counts records with that kind of finding. The names match the qa_ columns in "
+        "the downloaded Excel files and in the reference section at the bottom of this page."
+    )
+    flag_counts = []
+    for column, label, note in QA_FLAG_DETAILS:
+        if column in raw_with_qa.columns:
+            matched = select_rows_for_review(
+                raw_with_qa, flag_columns=[column], show_only_flagged=True,
             )
+            flag_counts.append((label, len(matched), note))
+    for start in range(0, len(flag_counts), 3):
+        columns = st.columns(3)
+        for container, (label, count, note) in zip(columns, flag_counts[start:start + 3]):
+            container.metric(label, count, help=note)
+
+    if sum(count for _, count, _ in flag_counts) == 0:
+        if len(issues):
+            st.info(
+                f"No individual record was flagged, but {len(issues):,} finding(s) apply to the whole "
+                "file. Open the 'All findings' tab below to read them."
+            )
+        else:
+            st.success(
+                "No flag was set for any record. That means the enabled checks found nothing to "
+                "review; it does not certify the dataset as correct."
+            )
+
+    st.divider()
+    st.subheader("Step 4: Find the records to check")
+    st.caption(
+        "The filters work together. Start with 'Show only records with a finding', then narrow by "
+        "kind of finding or search for a name, quadrat, or value."
+    )
+    filter_cols = st.columns(3)
+    with filter_cols[0]:
+        show_only_with_issues = st.checkbox("Show only records with a finding", value=False)
+    with filter_cols[1]:
+        show_message_only = st.checkbox(
+            "Only records with a written explanation", value=False,
+            help="Shows records that have text in the Message column.",
+        )
     with filter_cols[2]:
-        if not show_only_with_issues:
-            search = st.text_input("Search in data", placeholder="Search any column...")
-    with filter_cols[3]:
-        show_message_only = st.checkbox("Show only rows with Message", value=False)
-    
+        search = st.text_input("Search the table", placeholder="Name, quadrat, value...")
+
+    available_flag_columns = [column for column in QA_FLAG_COLUMNS if column in raw_with_qa.columns]
     if show_only_with_issues:
-        # Show only rows with any QA flag
-        mask = pd.Series(False, index=display_df.index)
-        for col in qa_cols_for_filter:
-            if col in display_df.columns:
-                if col == 'qa_coverage_mismatch':
-                    mask = mask | display_df[col].str.startswith('Yes', na=False)
-                else:
-                    mask = mask | (display_df[col] == 'Yes')
-        display_df = display_df[mask]
-    elif show_message_only:
-        display_df = display_df[display_df['Message'] != '']
-    elif search:
-        # Simple search across all columns
-        mask = pd.Series(False, index=display_df.index)
-        for col in display_df.select_dtypes(include=['object', 'string']).columns:
-            mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
-        display_df = display_df[mask]
-    
+        qa_cols_for_filter = st.multiselect(
+            "Only these kinds of finding",
+            options=available_flag_columns,
+            default=available_flag_columns,
+            format_func=lambda column: QA_FLAG_LABEL_MAP[column],
+            help="Leave this empty to see records with any kind of finding.",
+        )
+    else:
+        qa_cols_for_filter = available_flag_columns
+
+    display_df = select_rows_for_review(
+        raw_with_qa,
+        flag_columns=QA_FLAG_COLUMNS,
+        show_only_flagged=show_only_with_issues,
+        selected_flags=qa_cols_for_filter,
+        message_only=show_message_only,
+        search_text=search,
+    )
+
     # Keep the key downloads above the preview so users do not have to scroll
     # through thousands of records to reach the next actions.
     st.caption(
-        f"Filtered result: {len(display_df):,} rows. Previewing the first "
-        f"{min(10, len(display_df)):,} rows below; download the full result or open "
-        "the expandable table when you need to inspect more."
+        f"Showing {len(display_df):,} of {len(raw_with_qa):,} records. The preview below shows the "
+        f"first {min(10, len(display_df)):,}; open the expandable table or download the filtered view "
+        "when you need more."
     )
-    st.subheader("Downloads")
+    if display_df.empty:
+        st.info(
+            "No record matches the current filters. Clear the search box or untick a filter to see "
+            "records again."
+        )
+
+    st.subheader("Step 5: Download what you need")
+    st.caption(
+        "Each download is a copy. Your uploaded file is never changed on this page."
+    )
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
             "Download raw data with QA flags and messages (.xlsx)",
             dataframe_to_xlsx(raw_with_qa, sheet_name="Raw data with QA"),
-            file_name="raw_with_qa_flags.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name="raw_with_qa_flags.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Your original columns plus one flag column per finding type and a Message column. This is the file to fix records in.",
         )
+        st.caption("Most teams open this one first.")
     with col2:
         st.download_button(
             "Download QA issues list (.xlsx)",
             dataframe_to_xlsx(issues, sheet_name="QA issues"),
-            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="One line per finding: record, field, severity, and explanation. Useful for sharing a task list.",
         )
     with col3:
         st.download_button(
             "Download filtered view (.xlsx)",
             dataframe_to_xlsx(display_df, sheet_name="Filtered data"),
             file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help=f"Only the {len(display_df):,} records currently shown in Step 4.",
+        )
+
+    with st.expander("Not sure which file to open first?"):
+        st.markdown(
+            """
+            | What you want to do | Download or tab |
+            |---|---|
+            | Fix the records in Excel | Raw data with QA flags and messages |
+            | Send a list of findings to a colleague | QA issues list |
+            | Check only the records you filtered | Filtered view |
+            | Read a short summary to share | Summary report tab |
+            | See what the checker changed | What changed tab |
+            | Give each enumerator their own file | Reports for each enumerator, further down |
+            """
         )
 
     table_config = {
-        col: st.column_config.Column(
-            col,
-            help="QA flag: 'Yes' indicates this row has the issue",
+        column: st.column_config.Column(
+            column,
+            help=QA_FLAG_HELP_MAP[column],
             width="small",
-        ) for col in qa_cols if col in display_df.columns
+        ) for column in QA_FLAG_COLUMNS if column in display_df.columns
     }
     st.subheader("Data preview")
+    st.caption(
+        "Column names match the downloaded files. Hover a qa_ column heading to read what it means."
+    )
     st.dataframe(
         display_df.head(10),
         width="stretch",
         hide_index=True,
         column_config=table_config,
     )
-    with st.expander(f"Open full filtered table ({len(display_df):,} rows)", expanded=False):
+    with st.expander(f"Open full filtered table ({len(display_df):,} records)"):
         st.dataframe(
             display_df,
             width="stretch",
@@ -1462,12 +1708,12 @@ else:
 
     st.divider()
 
-    # ---- ORIGINAL TABS ----
     tab_report, tab_issues, tab_corrections, tab_clean = st.tabs(
-        ["QA report", "Issue list", "Correction log", "Clean dataset"]
+        ["Summary report", "All findings", "What changed", "Cleaned data"]
     )
-    
+
     with tab_report:
+        st.caption("A short overview you can paste into an email or report.")
         # The managed temporary directory is removed automatically after the report is read.
         with tempfile.TemporaryDirectory(prefix="m4s_qa_") as temp_dir:
             report_path = pathlib.Path(temp_dir) / "qa_report.md"
@@ -1475,8 +1721,11 @@ else:
             report_text = report_path.read_text(encoding="utf-8")
         st.markdown(report_text)
         st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
-    
+
     with tab_issues:
+        st.caption(
+            "Every finding from every check, one per line. Records without a finding are not listed here."
+        )
         st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the Excel workbook for the full issue list.")
         st.dataframe(display_issues.head(10), width='stretch', hide_index=True)
         st.download_button(
@@ -1484,8 +1733,12 @@ else:
             dataframe_to_xlsx(display_issues, sheet_name="QA issues"),
             file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    
+
     with tab_corrections:
+        st.caption(
+            "Every automatic change, with the value before and after. Check anything that looks wrong "
+            "in the original export."
+        )
         st.caption(f"Preview: first {min(10, len(correction_log))} of {len(correction_log):,} correction-log rows. Download the Excel workbook for the full log.")
         st.dataframe(correction_log.head(10), width='stretch', hide_index=True)
         st.download_button(
@@ -1493,8 +1746,11 @@ else:
             dataframe_to_xlsx(correction_log, sheet_name="Correction log"),
             file_name="correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    
+
     with tab_clean:
+        st.caption(
+            "The dataset after the automatic clean-ups. Keep this separate from your original download."
+        )
         st.caption(f"Preview: first {min(10, len(clean_df))} of {len(clean_df):,} dataset rows. Download the Excel workbook for the complete dataset.")
         clean_preview = clean_df.head(10).copy()
         # Streamlit/PyArrow cannot infer one Arrow type for mixed numeric/text IDs.
@@ -1510,26 +1766,31 @@ else:
             dataframe_to_xlsx(clean_df, sheet_name="Clean dataset"),
             file_name="clean_dataset.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    
-    # ---- HUMAN-REVIEWED CORRECTION PROPOSALS (same upload, same workflow) ----
+
     st.divider()
-    with st.expander("Review suggested name and geography corrections", expanded=False):
-        st.caption("Review these proposals in the same workflow as the QA findings. Nothing in this section changes the source upload; only explicitly selected proposals are applied to a downloadable copy.")
+    with st.expander("Optional: review suggested name and site spellings"):
+        st.caption(
+            "Nothing in this section changes your upload. Only the suggestions you tick are applied, "
+            "and only to a separate downloadable copy."
+        )
         proposals = suggest_corrections(
             df,
             enumerator_threshold=enumerator_match_threshold,
             geography_threshold=geography_match_threshold,
         )
         if proposals.empty:
-            st.success("No candidate name or geography corrections were found at the selected thresholds.")
+            st.success("No name or site spelling suggestions were found at the selected thresholds.")
         else:
-            st.warning("Similarity is not proof. Verify proposed names and site labels with the field team before approving them.")
+            st.warning(
+                "A similar spelling is not proof of the same person or place. Confirm each suggestion "
+                "with the field team before approving it."
+            )
             approved_ids = []
             for _, proposal in proposals.iterrows():
                 label = (
                     f"{proposal['field']}: {proposal['current_value']!r} → "
                     f"{proposal['suggested_value']!r} "
-                    f"({proposal['similarity']}% similarity; {proposal['affected_rows']} rows)"
+                    f"({proposal['similarity']}% match; {proposal['affected_rows']} records)"
                 )
                 if st.checkbox(label, key=f"integrated_correction_{int(proposal['proposal_id'])}"):
                     approved_ids.append(int(proposal["proposal_id"]))
@@ -1538,24 +1799,26 @@ else:
                 reviewed_df, approved_log = apply_approved_corrections(df, proposals, approved_ids)
                 st.success(f"Prepared a review copy with {len(approved_log)} row-level changes. The uploaded source remains unchanged.")
                 st.caption(f"Preview: first {min(10, len(reviewed_df))} of {len(reviewed_df):,} rows. The download contains the full reviewed dataset.")
-                st.dataframe(reviewed_df.head(10), use_container_width=True, hide_index=True)
+                st.dataframe(reviewed_df.head(10), width="stretch", hide_index=True)
                 st.download_button(
                     "Download reviewed dataset (.xlsx)", dataframe_to_xlsx(reviewed_df, sheet_name="Reviewed dataset"),
                     file_name="m4s_corrected_reviewed.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_dataset_download",
                 )
                 st.caption(f"Preview: first {min(10, len(approved_log))} of {len(approved_log):,} approved changes. The download contains the full audit log.")
-                st.dataframe(approved_log.head(10), use_container_width=True, hide_index=True)
+                st.dataframe(approved_log.head(10), width="stretch", hide_index=True)
                 st.download_button(
                     "Download approved-correction audit log (.xlsx)", dataframe_to_xlsx(approved_log, sheet_name="Approved corrections"),
                     file_name="m4s_approved_correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_log_download",
                 )
 
-    # ---- ENUMERATOR-SPECIFIC ERROR EXPORTS ----
     st.divider()
-    st.subheader("Enumerator-specific error reports")
-    st.caption("Downloads one Excel workbook per enumerator. Each finding includes the direct Kobo photo URL when the export contains one. These switches affect only enumerator-facing reports; the full internal QA findings remain unchanged.")
+    st.subheader("Optional: reports for each enumerator")
+    st.caption(
+        "Each download creates one report per enumerator for follow-up. These switches only choose "
+        "what appears in those reports; the full findings stay unchanged."
+    )
     include_gps_accuracy = st.checkbox(
         "Include GPS precision / accuracy checks in enumerator reports",
         value=True,
@@ -1572,6 +1835,22 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
+
+    report_workbook = enumerator_error_workbook(
+        clean_df, issues,
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    st.download_button(
+        "Download enumerator error reports (Excel .xlsx)",
+        data=report_workbook,
+        file_name="m4s_enumerator_error_reports.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="One Excel workbook with a Summary sheet and one findings sheet per enumerator.",
+    )
+    st.caption("Most teams use this: one workbook, one sheet per enumerator.")
+
     report_zip = enumerator_error_zip(
         clean_df, issues,
         include_gps_accuracy=include_gps_accuracy,
@@ -1585,22 +1864,7 @@ else:
         mime="application/zip",
         help="A ZIP containing one .xlsx workbook per enumerator, with filters, a frozen header row, and clickable Kobo photo links where available.",
     )
-
-    # Optional consolidated workbook: one summary sheet plus one findings sheet
-    # per enumerator. The ZIP above remains available for separate per-enumerator files.
-    report_workbook = enumerator_error_workbook(
-        clean_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
-    st.download_button(
-        "Download enumerator error reports (Excel .xlsx)",
-        data=report_workbook,
-        file_name="m4s_enumerator_error_reports.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="One Excel workbook with a Summary sheet and one findings sheet per enumerator. Use the ZIP above if you prefer a separate workbook for each enumerator.",
-    )
+    st.caption("Use this when each enumerator should receive their own separate file.")
 
     # This is the field team's working copy: preserve all source rows and columns,
     # then append only row-aligned ERROR messages. Warnings stay out of this export.
@@ -1617,32 +1881,41 @@ else:
         mime="application/zip",
         help="One .xlsx workbook per enumerator with all original source rows and columns, plus one Error Message column containing errors only (no warnings). Blank source headers are labeled by Excel column position, without guessing their meaning. Headers are frozen and columns are filterable.",
     )
+    st.caption(
+        "Use this when an enumerator needs to see their original answers next to the error messages. "
+        "Errors only; warnings are left out of this export."
+    )
 
-    # ---- QUICK REFERENCE ----
-    with st.expander("QA column reference"):
-        st.markdown("""
-        ### QA Flag Columns Explained
-        
-        | Column | Description | When triggered |
-        |--------|-------------|----------------|
-        | **qa_gps_precision_0** | GPS precision is 0.0 | Recorded precision is 0.0 (likely no GPS fix) |
-        | **qa_missing_coordinates** | Missing GPS coordinates | No lat/long recorded |
-        | **qa_outside_boundary** | Outside survey area | GPS point >500m from site centroid |
-        | **qa_duplicate_uuid** | Duplicate submission | Same UUID appears more than once |
-        | **qa_species_logic** | Species logic error | Species marked present but 0% cover, or vice versa |
-        | **qa_coverage_mismatch** | Coverage mismatch | Individual species % don't sum to Epicover Percentage |
-        
-        ### Message Column
-        The `Message` column provides detailed descriptions of all issues for each row.
-        Multiple issues are separated by semicolons (;).
-        
-        ### How to Use This Tool
-        1. **Review the summary** to understand what issues exist
-        2. **Filter by QA columns** to find all rows with specific issues
-        3. **Check the Message column** for detailed error descriptions
-        4. **Download raw_with_qa_flags.xlsx** to fix issues in Excel
-        5. **Fix issues in the raw data** and re-upload
-        6. **Use the Message column** as a checklist during data cleaning
-        """)
-    
-    st.caption(f"Dataset: {uploaded.name} | Records: {total} | Findings: {len(issues)} | Corrections: {len(correction_log)}")
+    with st.expander("What each flag column means"):
+        st.markdown(
+            """
+            | Column | Plain meaning | When it appears |
+            |---|---|---|
+            | **qa_gps_precision_0** | No GPS fix | Precision recorded as 0.0 |
+            | **qa_missing_coordinates** | Missing coordinates | Latitude or longitude blank |
+            | **qa_outside_boundary** | Far from the site | More than 500 m from the site reference point |
+            | **qa_duplicate_uuid** | Duplicate record | Same submission identifier twice |
+            | **qa_species_logic** | Species answers | Species marked present without cover, or cover without the species |
+            | **qa_missing_general_condition** | Missing condition | General condition answer blank |
+            | **qa_coverage_mismatch** | Coverage does not add up | Species percentages differ from Epicover beyond tolerance |
+
+            A cell holds **Yes** or **Review** when the finding applies to that record, and is empty
+            otherwise.
+
+            The **Message** column explains every finding for a record in one cell. Several
+            explanations are separated by semicolons (;).
+
+            A suggested review order:
+
+            1. Read the summary in Step 2.
+            2. Open the records flagged in Step 4, errors first.
+            3. Compare each one with the original submission and the field protocol.
+            4. Record what you changed and who approved it.
+            5. Run the checks again on the corrected export.
+            """
+        )
+
+    st.caption(
+        f"File: {uploaded.name} | Records: {total} | Findings: {len(issues)} | "
+        f"Automatic corrections: {len(correction_log)}"
+    )
