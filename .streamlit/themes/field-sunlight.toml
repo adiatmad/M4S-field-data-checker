@@ -1,0 +1,10 @@
+# High-contrast palette for tablets used in bright daylight: pure black on white.
+[theme]
+base = "light"
+primaryColor = "#00513F"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F7F5"
+textColor = "#000000"
+borderColor = "#767676"
+linkColor = "#00513F"
+showWidgetBorder = true

@@ -1,9 +1,12 @@
-# Explicit theme so the app looks the same for every viewer instead of inheriting
-# a dark operating-system setting. Colours are checked for text contrast on white.
+# Active theme: calm light palette, identical for every viewer.
+# To switch, copy the [theme] block from one of .streamlit/themes/*.toml over the block below
+# and reload the app. Options: seagrass-light, seagrass-dark, field-sunlight.
 [theme]
 base = "light"
 primaryColor = "#1C6B5A"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#EEF3F0"
 textColor = "#17231F"
-font = "sans serif"
+borderColor = "#CFDCD5"
+linkColor = "#1C6B5A"
+showWidgetBorder = true

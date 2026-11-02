@@ -1,0 +1,10 @@
+# Designed dark palette for evening or low-light review, not Streamlit's raw black.
+[theme]
+base = "dark"
+primaryColor = "#6FD8B4"
+backgroundColor = "#0F1B18"
+secondaryBackgroundColor = "#1A2A25"
+textColor = "#E9F2ED"
+borderColor = "#2E453E"
+linkColor = "#8FE6C8"
+showWidgetBorder = true

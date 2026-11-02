@@ -1,0 +1,10 @@
+# Calm light palette: white page, near-black green text, muted seagrass accent.
+[theme]
+base = "light"
+primaryColor = "#1C6B5A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF3F0"
+textColor = "#17231F"
+borderColor = "#CFDCD5"
+linkColor = "#1C6B5A"
+showWidgetBorder = true
