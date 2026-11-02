@@ -1,0 +1,9 @@
+# Explicit theme so the app looks the same for every viewer instead of inheriting
+# a dark operating-system setting. Colours are checked for text contrast on white.
+[theme]
+base = "light"
+primaryColor = "#1C6B5A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF3F0"
+textColor = "#17231F"
+font = "sans serif"

@@ -61,3 +61,5 @@ Do not add onboarding screens, dashboards, cards, charts, or multi-step wizards 
 ## Scope of the initial implementation
 
 The first pass addresses audit findings about missing UI design direction, overconfident clean-data copy, decorative labels, and em dashes in visible/generated messages. It does not redesign the full page structure, change validation logic, alter ecological thresholds, or claim a manual UI audit has been completed.
+
+A later pass, requested by the owner, added an explicit light theme in `.streamlit/config.toml` so the app no longer inherits a viewer's dark system setting, and restructured both workflows into numbered plain-language steps. The theme uses native Streamlit configuration only, with no custom CSS, JavaScript, or component packages.
