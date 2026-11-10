@@ -32,7 +32,7 @@ def test_raw_export_preserves_rows_and_columns_and_appends_only_error_message():
     assert len(ana) == 2
     assert ana["Numeru Quadrante"].tolist() == [1, 2]
     assert ana["Foto Quadrante_URL"].tolist() == ["https://example.test/photo1", ""]
-    assert ana.columns.tolist() == [*raw.columns.tolist(), "Error Message"]
+    assert ana.columns.tolist() == ["Error Message", *raw.columns.tolist()]
     assert ana.loc[0, "Error Message"] == "Espésie Ho marka hanesan prezente, maibé la rejista % kober (Ho marked present but no % cover recorded)"
     assert ana.loc[1, "Error Message"] == "Ho cover is missing"
     assert "warning" not in " ".join(ana["Error Message"].tolist()).casefold()
@@ -49,7 +49,7 @@ def test_raw_export_does_not_add_missing_cover_or_qa_helper_columns():
 
     exported = build_enumerator_raw_exports(raw, issues)["Cak"]
 
-    assert exported.columns.tolist() == ["Collector Name", "source_value", "Error Message"]
+    assert exported.columns.tolist() == ["Error Message", "Collector Name", "source_value"]
     assert "percentage-cover column is missing" in exported.loc[0, "Error Message"]
 
 
@@ -59,7 +59,7 @@ def test_blank_source_headers_are_explicitly_labeled_by_excel_position():
 
     exported = build_enumerator_raw_exports(raw, issues)["Ana"]
 
-    assert exported.columns.tolist() == ["Collector Name", "Unnamed: B", "Unnamed: C", "Error Message"]
+    assert exported.columns.tolist() == ["Error Message", "Collector Name", "Unnamed: B", "Unnamed: C"]
     assert exported.loc[0, "Unnamed: B"] == "value-bs"
     assert exported.loc[0, "Unnamed: C"] == "value-bt"
 
@@ -72,9 +72,9 @@ def test_blank_header_at_excel_column_bs_uses_position_label():
 
     exported = build_enumerator_raw_exports(raw, issues)["Ana"]
 
-    assert exported.columns[70] == "Unnamed: BS"
-    assert exported.columns[-1] == "Error Message"
-    assert exported.iloc[0, 70] == "v69"
+    assert exported.columns[71] == "Unnamed: BS"
+    assert exported.columns[0] == "Error Message"
+    assert exported.iloc[0, 71] == "v69"
 
 def test_pandas_generated_unnamed_header_at_bs_is_normalized_by_position():
     columns = ["Collector Name"] + [f"field{i}" for i in range(69)] + ["Unnamed: 70"]
@@ -83,7 +83,7 @@ def test_pandas_generated_unnamed_header_at_bs_is_normalized_by_position():
 
     exported = build_enumerator_raw_exports(raw, issues)["Ana"]
 
-    assert exported.columns[70] == "Unnamed: BS"
+    assert exported.columns[71] == "Unnamed: BS"
     assert exported.iloc[0, 70] == "v69"
 
 
@@ -99,7 +99,7 @@ def test_raw_export_keeps_rows_when_no_errors_and_excludes_warnings():
     assert len(exported) == 2
     assert exported["source_value"].tolist() == ["keep", "also keep"]
     assert exported["Error Message"].eq("").all()
-    assert exported.columns.tolist() == ["Collector Name", "source_value", "Error Message"]
+    assert exported.columns.tolist() == ["Error Message", "Collector Name", "source_value"]
 
 
 def test_zip_contains_per_enumerator_xlsx_with_excel_filters_and_preserved_values():
@@ -119,9 +119,9 @@ def test_zip_contains_per_enumerator_xlsx_with_excel_filters_and_preserved_value
         content = archive.read(names[0])
     workbook = load_workbook(io.BytesIO(content), data_only=True)
     sheet = workbook["Raw data"]
-    assert [cell.value for cell in sheet[1]] == ["Collector Name", "answer", "photo_URL", "Error Message"]
-    assert sheet["B2"].value == "sí"
-    assert sheet["D2"].value == "Check answer"
+    assert [cell.value for cell in sheet[1]] == ["Error Message", "Collector Name", "answer", "photo_URL"]
+    assert sheet["C2"].value == "sí"
+    assert sheet["A2"].value == "Check answer"
     assert sheet.freeze_panes == "A2"
     assert sheet.auto_filter.ref == sheet.dimensions
-    assert sheet["C2"].hyperlink.target == "https://example.test/photo"
+    assert sheet["D2"].hyperlink.target == "https://example.test/photo"
