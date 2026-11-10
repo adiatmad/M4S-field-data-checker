@@ -67,7 +67,7 @@ def test_enumerator_raw_error_export_uses_tetum_plus_english_without_changing_co
     }])
     exported = build_enumerator_raw_exports(raw, issues)["Ana"]
 
-    assert exported.columns.tolist() == ["Naran Koletor", "answer", "Error Message"]
+    assert exported.columns.tolist() == ["Error Message", "Naran Koletor", "answer"]
     assert exported.loc[0, "Error Message"] == "Koordenada GPS falta (Missing GPS coordinates)"
 
 
