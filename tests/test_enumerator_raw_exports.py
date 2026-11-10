@@ -84,7 +84,7 @@ def test_pandas_generated_unnamed_header_at_bs_is_normalized_by_position():
     exported = build_enumerator_raw_exports(raw, issues)["Ana"]
 
     assert exported.columns[71] == "Unnamed: BS"
-    assert exported.iloc[0, 70] == "v69"
+    assert exported.iloc[0, 71] == "v69"
 
 
 def test_raw_export_keeps_rows_when_no_errors_and_excludes_warnings():
