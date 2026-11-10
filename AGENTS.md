@@ -37,3 +37,19 @@ Never cut: validation at trust boundaries, error handling that prevents data los
 Selected Matt Pocock engineering Skills live under `.agents/skills/`. Load the relevant Skill when its task matches: `grill-with-docs` / `grilling` for design clarification; `to-spec` and `to-tickets` for substantial work; `implement` and `tdd` for test-first implementation; `code-review` for review; `domain-modeling` and `codebase-design` for domain language and module design; `retro` for post-work environment improvements.
 
 These Skills complement, not replace, this repository's instructions, accepted specifications, and safety constraints. Preserve Spec Kit, Anti-Slop, Loop & Graph Engineering, and Ponytail. Where guidance overlaps, follow explicit repository constraints and the accepted spec. Ponytail's smallest-complete-change principle must never weaken tests, security, validation, or required verification. Invoke user-directed workflows only when requested; apply model-invoked guidance when relevant. If the active coding agent cannot load a Skill, follow its installed instructions where available and state the limitation rather than claiming it was invoked.
+
+## Project and data constraints
+
+- This is a human-reviewed survey-data QA tool. A finding is a prompt to investigate, not proof that a record is wrong.
+- Keep generic CSV checks separate from M4S-specific seagrass rules. Never generalize M4S expected columns, species assumptions, site locations, or thresholds to another survey.
+- Preserve original source rows and columns unless a transformation is explicitly specified. Keep correction logs and export behavior auditable.
+- Do not infer the meaning of unknown survey questions or empty source headers. Preserve source identifiers and explain uncertainty.
+- Protect uploaded survey data and potentially identifying information. Do not add telemetry, external uploads, or unnecessary data retention.
+- Maintain the documented distinction between errors and warnings, enumerator exports, consolidated workbooks, and raw-data ZIP outputs.
+- The constitution in `.specify/memory/constitution.md` records the project-wide data and QA contract; amend it only when that contract changes.
+
+## Quality gates
+
+- Apply the Anti-Slop core in `antislop.md`; reject generic copy, invented metrics, decorative UI, and unnecessary code.
+- This is a Streamlit UI. For substantive interface work, verify responsive behavior, keyboard/focus, empty/loading/error states, and real interactions rather than only the happy path.
+- Never weaken tests, expose sensitive survey data in logs, or silently change export contracts.
