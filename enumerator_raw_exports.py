@@ -86,7 +86,7 @@ def build_enumerator_raw_exports(
             filtered["severity"].astype("string").str.casefold().eq("error")
         ]
 
-    result[ERROR_COLUMN] = ""
+    result.insert(0, ERROR_COLUMN, "")
     if not filtered.empty and {"row_index", "message"}.issubset(filtered.columns):
         messages = {}
         for _, issue in filtered.iterrows():
