@@ -88,11 +88,46 @@ BASE_COLUMN_ALIASES = {
     "Foto Quadrante_URL": "Quadrat Photo_URL",
 }
 
+# Current and misspelled legacy headers for the duplicated Thalassia cover column.
+THALASSIA_PERCENT_ALIASES = (
+    "Persentajen (Th) Thalassia hemprichii (%)",
+    "Persentajen Thalassia hemprichii (%)",
+    "Persentajen (Th) Thhalassia hemprichii (%)",
+    "Persentajen Thhalassia hemprichii (%)",
+)
+
+
 def _normalize_header(value) -> str:
     """Normalize whitespace and Unicode for alias lookup without rewriting source headers."""
     if not isinstance(value, str):
         return value
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip()
+
+
+def _coalesce_thalassia_percent_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Combine the Thalassia percentage columns that the repeated Kobo block duplicates.
+
+    A record's Thalassia cover can sit in either copy, so keeping both splits the species
+    across two columns in every download. The first source column keeps its header and
+    takes the other copies' values; conflicting non-empty values fail instead of being
+    silently dropped.
+    """
+    headers = {_normalize_header(alias) for alias in THALASSIA_PERCENT_ALIASES}
+    headers.add(_normalize_header("Percent Thalassia hemprichii (%)"))
+    sources = [column for column in df.columns if _normalize_header(column) in headers]
+    if len(sources) < 2:
+        return df
+    values = df.loc[:, sources]
+    conflicts = values.nunique(axis=1, dropna=True).gt(1)
+    if conflicts.any():
+        rows = df.index[conflicts].tolist()[:10]
+        raise ValueError(
+            "Conflicting Thalassia hemprichii percentage values in duplicate "
+            f"source columns at dataframe rows: {rows}"
+        )
+    merged = df.copy()
+    merged[sources[0]] = values.bfill(axis=1).iloc[:, 0]
+    return merged.drop(columns=sources[1:])
 
 
 def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,8 +143,8 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Kobo/Excel exports can add leading, trailing, or repeated whitespace to labels.
     aliases = {_normalize_header(source): target for source, target in aliases.items()}
 
-    # Select the first known percentage column for each species. Some exports include
-    # older/typo variants as extra columns; leave those untouched rather than merging data.
+    # Select the first known percentage column for each species. Thalassia's duplicate
+    # columns are coalesced below; other older/typo variants stay untouched.
     percentage_candidates = {
         "Halophila ovalis": ["Persentajen (Ho) Halophila ovalis  (%)", "Persentajen Halophila ovalis (%)"],
         "Halophila minor": ["Persentajen (Hm) Halophila minor (%)", "Persentajen Halophila minor (%)"],
@@ -119,7 +154,7 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
         "Halophila beccarii": ["Persentajen (Hb) Halophila beccarii (%)", "Persentajen Halophila beccarii (%)"],
         "Halophila spinulosa": ["Persentajen (Hs) Halophila spinulosa (%)", "Persentajen Halophila spinulosa (%)"],
         "Enhalus acoroides": ["Persentajen (Ea) Enhalus acoroides (%)", "Persentajen Enhalus acoroides (%)"],
-        "Thalassia hemprichii": ["Persentajen (Th) Thalassia hemprichii (%)", "Persentajen Thalassia hemprichii (%)", "Persentajen (Th) Thhalassia hemprichii (%)", "Persentajen Thhalassia hemprichii (%)"],
+        "Thalassia hemprichii": [*THALASSIA_PERCENT_ALIASES],
         "Cymodocea rotundata": ["Persentajen (Cr) Cymodocea rotundata (%)", "Persentajen Cymodocea rotundata (%)"],
         "Cymodocea serrulata": ["Persentajen (Cs) Cymodocea serrulata (%)", "Persentajen Cymodocea serrulata (%)"],
         "Syringodium isoetifolium": ["Persentajen (Si) Syringodium isoetifolium (%)", "Persentajen Syringodium isoetifolium (%)"],
@@ -130,30 +165,7 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
         for candidate in candidates:
             aliases[_normalize_header(candidate)] = f"Percent {species} (%)"
 
-    # Thalassia hemprichii appears under both the current and a misspelled
-    # legacy header in some Kobo exports. Coalesce only these known aliases.
-    thalassia_target = "Percent Thalassia hemprichii (%)"
-    thalassia_headers = {
-        _normalize_header(candidate)
-        for candidate in percentage_candidates["Thalassia hemprichii"]
-    }
-    thalassia_sources = [
-        column for column in df.columns
-        if column == thalassia_target or _normalize_header(column) in thalassia_headers
-    ]
-    if len(thalassia_sources) > 1:
-        values = df.loc[:, thalassia_sources]
-        conflicts = values.nunique(axis=1, dropna=True).gt(1)
-        if conflicts.any():
-            rows = df.index[conflicts].tolist()[:10]
-            raise ValueError(
-                "Conflicting Thalassia hemprichii percentage values in duplicate "
-                f"source columns at dataframe rows: {rows}"
-            )
-        combined = values.bfill(axis=1).iloc[:, 0]
-        insert_at = min(df.columns.get_loc(column) for column in thalassia_sources)
-        df = df.drop(columns=thalassia_sources)
-        df.insert(insert_at, thalassia_target, combined)
+    df = _coalesce_thalassia_percent_columns(df)
 
     # Rename a known alias only when its canonical target is not already present.
     # Other duplicate aliases remain untouched rather than risking data loss.
@@ -178,8 +190,12 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read a raw Kobo export and return (untouched raw data, canonical working copy)."""
-    raw = pd.read_excel(path)
+    """Read a raw Kobo export and return (raw data, canonical working copy).
+
+    The duplicate Thalassia cover columns are combined in the raw copy too, so processed
+    workbooks and raw exports show one column instead of splitting the species.
+    """
+    raw = _coalesce_thalassia_percent_columns(pd.read_excel(path))
     working = _canonicalize_form_columns(raw)
     # Kobo exports can omit system metadata such as start/end/_uuid.
     # These fields support optional duration/duplicate checks, not core survey QA.
@@ -582,6 +598,8 @@ def add_qa_columns(df, issues):
     The Message column contains detailed descriptions of all issues for each row.
     """
     df_qa = df.copy()
+    # Reviewers filter on the message column, so it leads the export.
+    df_qa.insert(0, 'Message', '')
     
     qa_columns = [
         'qa_gps_precision_0',
@@ -595,8 +613,6 @@ def add_qa_columns(df, issues):
     
     for col in qa_columns:
         df_qa[col] = ''
-    
-    df_qa['Message'] = ''
     
     # Store messages for each row
     row_messages = {idx: [] for idx in df_qa.index}
@@ -1639,7 +1655,7 @@ else:
         data=raw_data_zip,
         file_name="m4s_enumerator_raw_data_with_errors.zip",
         mime="application/zip",
-        help="One .xlsx workbook per enumerator with all original source rows and columns, plus one Error Message column containing errors only (no warnings). Blank source headers are labeled by Excel column position, without guessing their meaning. Headers are frozen and columns are filterable.",
+        help="One .xlsx workbook per enumerator with all original source rows and columns, plus one leading Error Message column containing errors only (no warnings). Duplicate Thalassia percentage columns are combined into one column. Blank source headers are labeled by Excel column position, without guessing their meaning. Headers are frozen and columns are filterable.",
     )
 
     # ---- QUICK REFERENCE ----

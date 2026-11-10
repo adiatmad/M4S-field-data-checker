@@ -74,6 +74,22 @@ def test_duplicate_thalassia_percentage_headers_are_coalesced_without_data_loss(
     assert canonical.columns.tolist().count(target) == 1
 
 
+def test_load_data_combines_duplicate_thalassia_columns_in_raw_copy(tmp_path):
+    # The raw copy feeds the processed workbooks, so it must not keep the split either.
+    raw = tetun_export_frame().drop(columns=["Persentajen (Ho) Halophila ovalis  (%)"])
+    raw["Persentajen (Th) Thalassia hemprichii (%)"] = [None]
+    raw["Persentajen (Th) Thhalassia hemprichii (%)"] = [35]
+    path = tmp_path / "duplicate_thalassia.xlsx"
+    raw.to_excel(path, index=False)
+
+    source, working = load_data(str(path))
+
+    thalassia = [column for column in source.columns if "hemprichii" in column]
+    assert thalassia == ["Persentajen (Th) Thalassia hemprichii (%)"]
+    assert source.loc[0, thalassia[0]] == 35
+    assert working.loc[0, "Percent Thalassia hemprichii (%)"] == 35
+
+
 def test_duplicate_thalassia_percentage_headers_reject_conflicting_values():
     raw = tetun_export_frame().drop(columns=["Persentajen (Ho) Halophila ovalis  (%)"])
     raw["Persentajen (Th) Thalassia hemprichii (%)"] = [25]

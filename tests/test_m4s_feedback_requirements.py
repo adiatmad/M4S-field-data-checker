@@ -152,5 +152,6 @@ def test_missing_species_findings_appear_in_row_flags_and_message_column():
         "message": "Missing seagrass species: Presence of Seagrass = Yes but no species selected",
     }])
     result = add_qa_columns(source, issues)
+    assert result.columns[0] == "Message"
     assert result.loc[0, "qa_species_logic"] == "Yes"
     assert "Missing seagrass species" in result.loc[0, "Message"]
