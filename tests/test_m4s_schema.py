@@ -57,6 +57,32 @@ def test_tetun_headers_map_to_canonical_names_without_mutating_raw_columns():
     assert canonical.loc[0, "unrecognized_field"] == "keep me"
 
 
+
+def test_duplicate_thalassia_percentage_headers_are_coalesced_without_data_loss():
+    raw = tetun_export_frame().drop(columns=["Persentajen (Ho) Halophila ovalis  (%)"])
+    raw["Persentajen (Th) Thalassia hemprichii (%)"] = [25]
+    raw["Persentajen (Th) Thhalassia hemprichii (%)"] = [None]
+    raw.loc[0, "Persentajen (Th) Thhalassia hemprichii (%)"] = 40
+
+    canonical = _canonicalize_form_columns(raw)
+
+    target = "Percent Thalassia hemprichii (%)"
+    assert target in canonical.columns
+    assert canonical[target].tolist() == [25]
+    assert "Persentajen (Th) Thalassia hemprichii (%)" not in canonical.columns
+    assert "Persentajen (Th) Thhalassia hemprichii (%)" not in canonical.columns
+    assert canonical.columns.tolist().count(target) == 1
+
+
+def test_duplicate_thalassia_percentage_headers_reject_conflicting_values():
+    raw = tetun_export_frame().drop(columns=["Persentajen (Ho) Halophila ovalis  (%)"])
+    raw["Persentajen (Th) Thalassia hemprichii (%)"] = [25]
+    raw["Persentajen (Th) Thhalassia hemprichii (%)"] = [40]
+
+    with pytest.raises(ValueError, match="Conflicting Thalassia hemprichii percentage values"):
+        _canonicalize_form_columns(raw)
+
+
 def test_header_alias_lookup_ignores_whitespace_variations_without_rewriting_unknown_headers():
     raw = tetun_export_frame().rename(
         columns={
