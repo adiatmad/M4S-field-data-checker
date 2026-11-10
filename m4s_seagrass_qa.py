@@ -120,11 +120,35 @@ def _canonicalize_form_columns(df: pd.DataFrame) -> pd.DataFrame:
         for candidate in candidates:
             aliases[_normalize_header(candidate)] = f"Percent {species} (%)"
 
-    # Only rename when the canonical target is absent. If both are present, preserve
-    # both columns and avoid silently overwriting one source field with another.
+    # Thalassia hemprichii appears under both the current and a misspelled
+    # legacy header in some Kobo exports. Coalesce only these known aliases.
+    thalassia_target = "Percent Thalassia hemprichii (%)"
+    thalassia_headers = {
+        _normalize_header(candidate)
+        for candidate in percentage_candidates["Thalassia hemprichii"]
+    }
+    thalassia_sources = [
+        column for column in df.columns
+        if column == thalassia_target or _normalize_header(column) in thalassia_headers
+    ]
+    if len(thalassia_sources) > 1:
+        values = df.loc[:, thalassia_sources]
+        conflicts = values.nunique(axis=1, dropna=True).gt(1)
+        if conflicts.any():
+            rows = df.index[conflicts].tolist()[:10]
+            raise ValueError(
+                "Conflicting Thalassia hemprichii percentage values in duplicate "
+                f"source columns at dataframe rows: {rows}"
+            )
+        combined = values.bfill(axis=1).iloc[:, 0]
+        insert_at = min(df.columns.get_loc(column) for column in thalassia_sources)
+        df = df.drop(columns=thalassia_sources)
+        df.insert(insert_at, thalassia_target, combined)
+
+    # Rename a known alias only when its canonical target is not already present.
+    # Other duplicate aliases remain untouched rather than risking data loss.
     rename = {}
-    existing = set(df.columns)
-    claimed_targets = set(existing)
+    claimed_targets = set(df.columns)
     for source in df.columns:
         target = aliases.get(_normalize_header(source))
         if target and target not in claimed_targets:
