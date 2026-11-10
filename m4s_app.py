@@ -20,6 +20,7 @@ from dataframe_exports import dataframe_to_xlsx
 from enumerator_reports import build_enumerator_error_logs, enumerator_error_workbook, enumerator_error_zip, filter_enumerator_report_issues
 from enumerator_raw_exports import enumerator_raw_data_zip
 from qa_message_localization import localize_qa_issue_messages
+from row_filters import filter_raw_rows
 
 
 
@@ -1275,6 +1276,98 @@ def render_generic_csv_checker():
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+class QaStageError(Exception):
+    """A pipeline stage failed; the UI turns it into a recovery message."""
+
+    def __init__(self, stage: str, detail: str = ""):
+        super().__init__(stage)
+        self.stage = stage
+        self.detail = detail
+
+
+# Same recovery text as the per-stage handlers this replaces, keyed by stage.
+QA_STAGE_MESSAGES = {
+    "load": (
+        "The uploaded XLSX file could not be loaded. Check that it is a valid Kobo export, "
+        "then retry. If the problem persists, report the load stage without sharing survey data."
+    ),
+    "standardize": (
+        "M4S QA could not complete during data standardization. No results are available. "
+        "Check that the export matches the expected survey schema, then retry. "
+        "If the problem persists, report the standardization stage without sharing survey data."
+    ),
+    "validate": (
+        "M4S QA could not complete during validation. No results are available. Retry the workflow. "
+        "If the problem persists, report the validation stage without sharing survey data."
+    ),
+    "qa_flags": (
+        "M4S QA could not prepare row-level QA flags. No results are available. Retry the workflow. "
+        "If the problem persists, report the QA-flag stage without sharing survey data."
+    ),
+    "correct": (
+        "M4S QA could not complete the correction stage. No results are available. "
+        "The uploaded source file is not changed. Retry the workflow; if the problem persists, "
+        "report the correction stage without sharing survey data."
+    ),
+}
+
+
+@st.cache_data(show_spinner="Running QA pipeline...")
+def run_qa_pipeline(file_bytes: bytes, enumerator_match_threshold: int, geography_match_threshold: int):
+    """Run the whole M4S pipeline once per upload and settings pair.
+
+    Caching keeps filter changes instant instead of re-validating and re-correcting every row.
+    """
+    try:
+        raw_df, df = load_data(io.BytesIO(file_bytes))
+    except ValueError as exc:
+        raise QaStageError("load", str(exc)) from exc
+    except Exception as exc:
+        raise QaStageError("load") from exc
+    try:
+        df = standardize(df)
+    except Exception as exc:
+        raise QaStageError("standardize") from exc
+    try:
+        issues = validate(df)
+        display_issues = localize_qa_issue_messages(issues)
+    except Exception as exc:
+        raise QaStageError("validate") from exc
+    try:
+        raw_with_qa = add_qa_columns(raw_df, issues)
+    except Exception as exc:
+        raise QaStageError("qa_flags") from exc
+    try:
+        clean_df, correction_log = correct(
+            df, enumerator_match_threshold=enumerator_match_threshold,
+            geography_match_threshold=geography_match_threshold,
+        )
+    except Exception as exc:
+        raise QaStageError("correct") from exc
+    return raw_df, df, raw_with_qa, clean_df, issues, display_issues, correction_log
+
+
+@st.cache_data(show_spinner=False)
+def build_enumerator_downloads(raw_df, clean_df, issues, include_gps_accuracy, include_site_distance, include_text_formatting):
+    """Build the three enumerator downloads once per upload and switch state."""
+    options = dict(
+        include_gps_accuracy=include_gps_accuracy,
+        include_site_distance=include_site_distance,
+        include_text_formatting=include_text_formatting,
+    )
+    return (
+        enumerator_error_zip(clean_df, issues, **options),
+        enumerator_error_workbook(clean_df, issues, **options),
+        enumerator_raw_data_zip(raw_df, issues, **options),
+    )
+
+
+@st.cache_data(show_spinner=False)
+def xlsx_bytes(df, sheet_name: str) -> bytes:
+    """Write each export once per distinct table so repeated reruns stay responsive."""
+    return dataframe_to_xlsx(df, sheet_name=sheet_name)
+
+
 st.set_page_config(page_title="M4S Field Data QA Checker", layout="wide")
 mode = st.sidebar.radio("Choose workflow", ["M4S seagrass XLSX", "Generic CSV quality checker"])
 if mode == "Generic CSV quality checker":
@@ -1303,61 +1396,17 @@ else:
             help="Minimum fuzzy-match score before Administration Post or Village is corrected.",
         )
 
-    # Run each stage separately so failures stop the workflow without exposing a traceback.
-    with st.spinner("Running QA pipeline..."):
-        try:
-            raw_df, df = load_data(uploaded)
-        except ValueError as exc:
-            st.error(f"Could not load the uploaded XLSX file: {exc}")
-            st.stop()
-        except Exception:
-            st.error(
-                "The uploaded XLSX file could not be loaded. Check that it is a valid Kobo export, "
-                "then retry. If the problem persists, report the load stage without sharing survey data."
-            )
-            st.stop()
-
-        try:
-            df = standardize(df)
-        except Exception:
-            st.error(
-                "M4S QA could not complete during data standardization. No results are available. "
-                "Check that the export matches the expected survey schema, then retry. "
-                "If the problem persists, report the standardization stage without sharing survey data."
-            )
-            st.stop()
-
-        try:
-            issues = validate(df)
-            display_issues = localize_qa_issue_messages(issues)
-        except Exception:
-            st.error(
-                "M4S QA could not complete during validation. No results are available. Retry the workflow. "
-                "If the problem persists, report the validation stage without sharing survey data."
-            )
-            st.stop()
-
-        try:
-            raw_with_qa = add_qa_columns(raw_df, issues)
-        except Exception:
-            st.error(
-                "M4S QA could not prepare row-level QA flags. No results are available. Retry the workflow. "
-                "If the problem persists, report the QA-flag stage without sharing survey data."
-            )
-            st.stop()
-
-        try:
-            clean_df, correction_log = correct(
-                df, enumerator_match_threshold=enumerator_match_threshold,
-                geography_match_threshold=geography_match_threshold,
-            )
-        except Exception:
-            st.error(
-                "M4S QA could not complete the correction stage. No results are available. "
-                "The uploaded source file is not changed. Retry the workflow; if the problem persists, "
-                "report the correction stage without sharing survey data."
-            )
-            st.stop()
+    # The pipeline stops at the first failed stage and reports it without a traceback.
+    try:
+        raw_df, df, raw_with_qa, clean_df, issues, display_issues, correction_log = run_qa_pipeline(
+            uploaded.getvalue(), enumerator_match_threshold, geography_match_threshold
+        )
+    except QaStageError as exc:
+        if exc.stage == "load" and exc.detail:
+            st.error(f"Could not load the uploaded XLSX file: {exc.detail}")
+        else:
+            st.error(QA_STAGE_MESSAGES[exc.stage])
+        st.stop()
     
     # ---- summary metrics ----
     total = len(clean_df)
@@ -1375,108 +1424,105 @@ else:
     
     st.divider()
     
-    # ---- QA COLUMNS OVERVIEW ----
+    # ---- QA FLAGS OVERVIEW ----
     st.subheader("QA flags and messages")
-    st.markdown("""
-    The raw data now includes QA flag columns and a Message column. Each flag column indicates if a row has a specific type of issue.
-    The Message column provides detailed descriptions of all issues for each row.
-    **Filter by any column to find rows that need fixing!**
-    """)
-    
+    st.caption(
+        "The raw data gains one qa_ flag column per finding type and a leading Message column that "
+        "lists every finding for that row. Filter below to find the records that need fixing."
+    )
+
     # Show QA columns summary
     qa_cols = ['qa_gps_precision_0', 'qa_missing_coordinates',
                'qa_outside_boundary', 'qa_duplicate_uuid', 'qa_species_logic',
                'qa_missing_general_condition', 'qa_coverage_mismatch']
-    
+
+    # Only flags that matched earn a metric; a row of zeroes tells reviewers nothing.
+    # Coverage-mismatch flags carry a suffix, the other flags are a plain "Yes".
     qa_summary = {}
     for col in qa_cols:
         if col in raw_with_qa.columns:
-            if col == 'qa_coverage_mismatch':
-                count = raw_with_qa[col].str.startswith('Yes', na=False).sum()
-            else:
-                count = (raw_with_qa[col] == 'Yes').sum()
-            qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
-    
-    if sum(qa_summary.values()) > 0:
+            count = int(raw_with_qa[col].astype("string").str.startswith('Yes', na=False).sum())
+            if count:
+                qa_summary[col.replace('qa_', '').replace('_', ' ').title()] = count
+
+    if qa_summary:
         cols = st.columns(len(qa_summary))
         for i, (name, count) in enumerate(qa_summary.items()):
-            if count > 0:
-                cols[i].metric(name, count, delta=None)
-            else:
-                cols[i].metric(name, 0, delta=None)
+            cols[i].metric(name, count)
     else:
         st.success("No flags were triggered by the summary checks shown here. This does not certify the dataset as error-free; review the enabled checks and survey protocol.")
-    
+
     st.divider()
-    
-    st.subheader("Filter raw data by QA flags")
-    
-    # Show the raw data with QA columns
+
+    # ---- FILTERS, kept next to the table they narrow ----
+    st.subheader("Filter the raw data")
     display_df = raw_with_qa.copy()
-    
-    filter_cols = st.columns(4)
+
+    def _rows_with(severity=None):
+        if not len(issues):
+            return set()
+        rows = issues["row_index"]
+        if severity is not None:
+            rows = issues.loc[issues["severity"] == severity, "row_index"]
+        return set(pd.to_numeric(rows, errors="coerce").dropna().astype("Int64").tolist())
+
+    scope = st.segmented_control(
+        "Which records to show",
+        ["All rows", "With findings", "With errors", "With warnings"],
+        default="All rows",
+        key="raw_rows_scope",
+        help="Findings include checks without a QA flag column, so these counts can exceed the flags above.",
+    ) or "All rows"
+    scope_rows = {
+        "With findings": _rows_with(),
+        "With errors": _rows_with("error"),
+        "With warnings": _rows_with("warning"),
+    }.get(scope)
+
+    enumerator_values = None
+    if "Collector Name" in clean_df.columns and len(clean_df) == len(display_df):
+        enumerator_values = pd.Series(
+            clean_df["Collector Name"].fillna("(blank)").astype(str).to_numpy(), index=display_df.index
+        )
+
+    filter_cols = st.columns(3)
     with filter_cols[0]:
-        show_only_with_issues = st.checkbox("Show only rows with issues", value=False)
+        flag_filter = st.multiselect(
+            "QA flag to keep",
+            [col for col in qa_cols if col in display_df.columns],
+            key="raw_flag_filter",
+            help="Keeps records with any selected flag. Leave empty to keep every flag.",
+        )
     with filter_cols[1]:
-        if show_only_with_issues:
-            qa_cols_for_filter = st.multiselect(
-                "Filter by QA Flag",
-                options=qa_cols,
-                default=qa_cols
-            )
+        enumerator_filter = st.multiselect(
+            "Enumerator",
+            sorted(enumerator_values.unique()),
+            key="raw_enumerator_filter",
+            help="Keeps records recorded under the selected Collector Name values.",
+        ) if enumerator_values is not None else []
     with filter_cols[2]:
-        if not show_only_with_issues:
-            search = st.text_input("Search in data", placeholder="Search any column...")
-    with filter_cols[3]:
-        show_message_only = st.checkbox("Show only rows with Message", value=False)
-    
-    if show_only_with_issues:
-        # Show only rows with any QA flag
-        mask = pd.Series(False, index=display_df.index)
-        for col in qa_cols_for_filter:
-            if col in display_df.columns:
-                if col == 'qa_coverage_mismatch':
-                    mask = mask | display_df[col].str.startswith('Yes', na=False)
-                else:
-                    mask = mask | (display_df[col] == 'Yes')
-        display_df = display_df[mask]
-    elif show_message_only:
-        display_df = display_df[display_df['Message'] != '']
-    elif search:
-        # Simple search across all columns
-        mask = pd.Series(False, index=display_df.index)
-        for col in display_df.select_dtypes(include=['object', 'string']).columns:
-            mask = mask | display_df[col].astype(str).str.contains(search, case=False, na=False)
-        display_df = display_df[mask]
-    
-    # Keep the key downloads above the preview so users do not have to scroll
-    # through thousands of records to reach the next actions.
-    st.caption(
-        f"Filtered result: {len(display_df):,} rows. Previewing the first "
-        f"{min(10, len(display_df)):,} rows below; download the full result or open "
-        "the expandable table when you need to inspect more."
+        search = st.text_input(
+            "Search in data",
+            key="raw_search",
+            placeholder="Any text, such as a village or UUID",
+            help="Case-insensitive literal search across every text column, including Message.",
+        )
+
+    display_df = filter_raw_rows(
+        display_df,
+        rows_to_show=scope_rows,
+        flags=flag_filter,
+        enumerator_values=enumerator_values,
+        enumerators=enumerator_filter,
+        search=search,
     )
-    st.subheader("Downloads")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.download_button(
-            "Download raw data with QA flags and messages (.xlsx)",
-            dataframe_to_xlsx(raw_with_qa, sheet_name="Raw data with QA"),
-            file_name="raw_with_qa_flags.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    with col2:
-        st.download_button(
-            "Download QA issues list (.xlsx)",
-            dataframe_to_xlsx(issues, sheet_name="QA issues"),
-            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    with col3:
-        st.download_button(
-            "Download filtered view (.xlsx)",
-            dataframe_to_xlsx(display_df, sheet_name="Filtered data"),
-            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+
+    st.caption(
+        f"Filtered result: {len(display_df):,} of {len(raw_with_qa):,} records. Previewing the first "
+        f"{min(10, len(display_df)):,} rows; open the expandable table or the filtered-view download for the rest."
+    )
+    if display_df.empty:
+        st.info("No records match these filters. Clear or change a filter to see records again.")
 
     table_config = {
         col: st.column_config.Column(
@@ -1492,12 +1538,36 @@ else:
         hide_index=True,
         column_config=table_config,
     )
+    # Collapsed by default, so it stays next to the preview without pushing the exports down.
     with st.expander(f"Open full filtered table ({len(display_df):,} rows)", expanded=False):
         st.dataframe(
             display_df,
             width="stretch",
             hide_index=True,
             column_config=table_config,
+        )
+
+    st.subheader("Downloads")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.download_button(
+            "Download raw data with QA flags and messages (.xlsx)",
+            xlsx_bytes(raw_with_qa, "Raw data with QA"),
+            file_name="raw_with_qa_flags.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    with col2:
+        st.download_button(
+            "Download QA issues list (.xlsx)",
+            xlsx_bytes(issues, "QA issues"),
+            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    with col3:
+        st.download_button(
+            "Download filtered view (.xlsx)",
+            xlsx_bytes(display_df, "Filtered data"),
+            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     st.divider()
@@ -1517,20 +1587,16 @@ else:
         st.download_button("Download QA report (Markdown)", report_text, file_name="qa_report.md")
     
     with tab_issues:
-        st.caption(f"Preview: first {min(10, len(issues))} of {len(issues):,} findings. Download the Excel workbook for the full issue list.")
+        # One place to download the issue file: the Downloads section above.
+        st.caption(f"Preview: first {min(10, len(display_issues))} of {len(display_issues):,} findings. Download the Excel workbook from the Downloads section above.")
         st.dataframe(display_issues.head(10), width='stretch', hide_index=True)
-        st.download_button(
-            "Download QA issues (.xlsx)",
-            dataframe_to_xlsx(display_issues, sheet_name="QA issues"),
-            file_name="qa_issues.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
     
     with tab_corrections:
         st.caption(f"Preview: first {min(10, len(correction_log))} of {len(correction_log):,} correction-log rows. Download the Excel workbook for the full log.")
         st.dataframe(correction_log.head(10), width='stretch', hide_index=True)
         st.download_button(
             "Download correction log (.xlsx)",
-            dataframe_to_xlsx(correction_log, sheet_name="Correction log"),
+            xlsx_bytes(correction_log, "Correction log"),
             file_name="correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
@@ -1547,7 +1613,7 @@ else:
         st.dataframe(clean_preview, width='stretch', hide_index=True)
         st.download_button(
             "Download clean dataset (.xlsx)",
-            dataframe_to_xlsx(clean_df, sheet_name="Clean dataset"),
+            xlsx_bytes(clean_df, "Clean dataset"),
             file_name="clean_dataset.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
@@ -1580,14 +1646,14 @@ else:
                 st.caption(f"Preview: first {min(10, len(reviewed_df))} of {len(reviewed_df):,} rows. The download contains the full reviewed dataset.")
                 st.dataframe(reviewed_df.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
-                    "Download reviewed dataset (.xlsx)", dataframe_to_xlsx(reviewed_df, sheet_name="Reviewed dataset"),
+                    "Download reviewed dataset (.xlsx)", xlsx_bytes(reviewed_df, "Reviewed dataset"),
                     file_name="m4s_corrected_reviewed.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_dataset_download",
                 )
                 st.caption(f"Preview: first {min(10, len(approved_log))} of {len(approved_log):,} approved changes. The download contains the full audit log.")
                 st.dataframe(approved_log.head(10), use_container_width=True, hide_index=True)
                 st.download_button(
-                    "Download approved-correction audit log (.xlsx)", dataframe_to_xlsx(approved_log, sheet_name="Approved corrections"),
+                    "Download approved-correction audit log (.xlsx)", xlsx_bytes(approved_log, "Approved corrections"),
                     file_name="m4s_approved_correction_log.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="integrated_reviewed_log_download",
                 )
@@ -1612,11 +1678,9 @@ else:
         key="enumerator_report_text_formatting",
         help="Flags inconsistent capitalization in low-cardinality text fields. Findings are suggestions, not automatic corrections.",
     )
-    report_zip = enumerator_error_zip(
-        clean_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
+    report_zip, report_workbook, raw_data_zip = build_enumerator_downloads(
+        raw_df, clean_df, issues,
+        include_gps_accuracy, include_site_distance, include_text_formatting,
     )
     st.download_button(
         "Download enumerator error logs (.zip)",
@@ -1628,12 +1692,6 @@ else:
 
     # Optional consolidated workbook: one summary sheet plus one findings sheet
     # per enumerator. The ZIP above remains available for separate per-enumerator files.
-    report_workbook = enumerator_error_workbook(
-        clean_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
     st.download_button(
         "Download enumerator error reports (Excel .xlsx)",
         data=report_workbook,
@@ -1644,12 +1702,6 @@ else:
 
     # This is the field team's working copy: preserve all source rows and columns,
     # then append only row-aligned ERROR messages. Warnings stay out of this export.
-    raw_data_zip = enumerator_raw_data_zip(
-        raw_df, issues,
-        include_gps_accuracy=include_gps_accuracy,
-        include_site_distance=include_site_distance,
-        include_text_formatting=include_text_formatting,
-    )
     st.download_button(
         "Download full raw data + error messages per enumerator (.zip)",
         data=raw_data_zip,

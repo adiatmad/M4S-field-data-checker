@@ -10,6 +10,8 @@ Use this checklist before releasing a change that affects either Streamlit workf
 - [ ] An unsupported or malformed file gives a recoverable error rather than a traceback.
 - [ ] A synthetic record beyond the centroid-distance threshold is labelled for review, not described as proven outside the site polygon.
 - [ ] Findings, row-level QA flags, correction log, and report exports are usable and agree with the displayed results.
+- [ ] The row filters (record scope, QA flag, enumerator, search) narrow the preview and the filtered-view download, the stated count matches the visible rows, an unmatched search shows the empty-result message, and pasted text such as `(` does not error.
+- [ ] Changing a filter responds without re-running the whole pipeline (the results are cached per upload and settings).
 - [ ] The original uploaded data remains distinguishable from standardized, corrected, and QA-annotated outputs.
 
 ## Generic Kobo CSV workflow

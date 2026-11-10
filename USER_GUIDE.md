@@ -45,14 +45,14 @@ A row without a finding is not guaranteed to be correct. The checker only tests 
 
 ### Step 3 — Find the records that need review
 
-Use the available filters to narrow the data:
+Use the filters directly above the data preview to narrow the data:
 
-- **Show only rows with issues** to focus on flagged records.
-- **Filter by QA Flag** to show particular types of finding.
-- **Search in data** to look for a value or record.
-- **Show only rows with Message** to focus on rows that have a QA message.
+- **Which records to show** to switch between every row, rows with any finding, rows with errors, and rows with warnings.
+- **QA flag to keep** to keep only rows that have any of the selected flags.
+- **Enumerator** to keep only rows recorded under the selected **Collector Name** values.
+- **Search in data** to look for a value or record. The search is literal, case-insensitive text and also matches the **Message** column.
 
-The app normally previews the first 10 rows. An expandable section can show the full filtered table. Use filters to investigate; they do not edit the original KoboToolbox submission.
+Filters combine: a row must match every filter you set. The line under the filters states how many records matched, and an empty result says so instead of showing a blank table. The app previews the first 10 rows; an expandable section can show the full filtered table. Use filters to investigate; they do not edit the original KoboToolbox submission.
 
 ### Step 4 — Understand common M4S flags
 
